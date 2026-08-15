@@ -64,8 +64,10 @@ doctor() {
 }
 
 install() {
+  [ -n "${1:-}" ] || { echo "Usage: macaron install <repository>" >&2; return 2; }
   REPO=$1
   NAME=$(basename "$REPO")
+  NAME="${NAME%.git}"
 
   # If NAME starts with macaron-service- , strip it off
   if [[ "$NAME" == macaron-service-* ]]; then
@@ -73,6 +75,7 @@ install() {
   fi
 
   echo "📦 Installing from $REPO..."
+  mkdir -p "$SERVICES_DIR"
   git clone "$REPO" "$SERVICES_DIR/$NAME"
   echo "✅ Installed from $REPO"
 }
@@ -135,19 +138,29 @@ start() {
   TAILSCALE_IP=$(tailscale ip -4 | head -n 1)
   PORT=49001
   LOGS=""
+  FOUND_SERVICES=0
 
-  for SERVICE_START in "$SERVICES_DIR"/*/start; do
-    [ -x "$SERVICE_START" ] || continue
+  if [ -d "$SERVICES_DIR" ]; then
+    for SERVICE_DIR in "$SERVICES_DIR"/*; do
+      [ -d "$SERVICE_DIR" ] || continue
+      SERVICE_START="$SERVICE_DIR/start"
+      [ -f "$SERVICE_START" ] || continue
+      FOUND_SERVICES=1
 
-    SERVICE=$(basename "$(dirname "$SERVICE_START")")
-    if MACARON_AVAILABLE_PORT="$PORT" "$SERVICE_START"; then
-      echo "✅ $SERVICE started"
-      LOGS="$LOGS   -> $SERVICE: http://$TAILSCALE_IP:$PORT\n"
-    else
-      echo "😵 Failed to start $SERVICE"
-    fi
-    PORT=$((PORT + 1))
-  done
+      SERVICE=$(basename "$SERVICE_DIR")
+      if MACARON_AVAILABLE_PORT="$PORT" run_check "$SERVICE_START"; then
+        echo "✅ $SERVICE started"
+        LOGS="$LOGS   -> $SERVICE: http://$TAILSCALE_IP:$PORT\n"
+      else
+        echo "😵 Failed to start $SERVICE"
+      fi
+      PORT=$((PORT + 1))
+    done
+  fi
+
+  if [ "$FOUND_SERVICES" -eq 0 ]; then
+    echo "⚠️  No services found in $SERVICES_DIR"
+  fi
 
   echo
   echo "🏃 Everything looks good! Macaron is running..."
