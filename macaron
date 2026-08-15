@@ -63,6 +63,32 @@ doctor() {
   return "$failed"
 }
 
+install() {
+  REPO=$1
+  NAME=$(basename "$REPO")
+
+  # If NAME starts with macaron-service- , strip it off
+  if [[ "$NAME" == macaron-service-* ]]; then
+    NAME="${NAME#macaron-service-}"
+  fi
+
+  echo "📦 Installing from $REPO..."
+  git clone "$REPO" "$SERVICES_DIR/$NAME"
+  echo "✅ Installed from $REPO"
+}
+
+update() {
+  echo "🔄 Updating..."
+  for service_dir in "$SERVICES_DIR"/*; do
+    if [ -d "$service_dir" ]; then
+      cd "$service_dir"
+      git pull &>/dev/null
+      echo "✅ $(basename "$service_dir") updated ($(git rev-parse --short HEAD))"
+    fi
+  done
+  echo "✅ Update complete"
+}
+
 start() {
   sudo -v
 
@@ -135,6 +161,10 @@ start() {
 
 if [ "${1:-start}" = "doctor" ]; then
   doctor
+elif [ "${1:-start}" = "install" ]; then
+  install $2
+elif [ "${1:-start}" = "update" ]; then
+  update
 else
   start
 fi

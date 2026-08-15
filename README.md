@@ -21,7 +21,7 @@ flowchart LR
 ```
 
 ```sh
-curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | bash
+curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | sudo bash
 ```
 
 ## Requirements
