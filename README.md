@@ -1,89 +1,81 @@
 # Macaron
 
-Macaron prepares a Mac for remote access and starts available services through
-the [Tailscale][tailscale] network.
+Macaron turns your Mac into a remote workstation.
 
-When started, Macaron:
-
-1. requests `sudo` authorization;
-2. temporarily enables **Remote Login** (SSH);
-3. temporarily disables Mac sleep;
-4. runs `tailscale up`;
-5. starts the `start` scripts in `services/<service-name>/`;
-6. stays running to keep the remote environment active.
-
-When Macaron receives `Ctrl-C` or a termination signal, it restores the
-previous state of Remote Login, sleep, and Tailscale.
+It uses [Tailscale][tailscale] to make your Mac reachable from your private
+network, keeps it awake, enables SSH, and starts the services you configure.
 
 ```mermaid
-flowchart TB
-    client[Remote device]
-    network[Tailscale network]
-    mac[Macaron on the Mac]
-    ssh[SSH / Remote Login]
-    services[Configured services]
-    client --> network --> mac
-    mac --> ssh
-    mac --> services
+flowchart LR
+    device[Remote device] <--> tailnet((Tailscale))
+
+    subgraph mac[Your Mac]
+        macaron[Macaron]
+        services[Configured services]
+    end
+
+    tailnet <--> macaron
+    macaron --> services
+    macaron --> ssh[SSH]
+    macaron --> awake[Mac stays awake]
 ```
 
 ## Requirements
 
-- macOS;
-- [Tailscale][tailscale] installed, authenticated, and available on `PATH`;
-- an account authorized to use `sudo`.
+- macOS
+- Tailscale installed, authenticated, and available on `PATH`
+- `sudo` access
+- Any dependencies required by your services
 
 ## Usage
 
-From the project directory:
+Start Macaron from the project directory:
 
 ```sh
 ./macaron
 ```
 
-The default command is `start`. To quickly check whether Tailscale is running:
+It will:
+
+- enable Remote Login;
+- temporarily disable sleep;
+- run `tailscale up`;
+- start the configured services;
+- print the SSH address and service URLs.
+
+Run the environment and configured-service checks without starting the
+workstation. The command exits non-zero if any check fails:
 
 ```sh
 ./macaron doctor
 ```
 
-After startup, Macaron prints the SSH address and service URLs using the
-machine's IPv4 address on the Tailscale network:
-
-```text
-ssh <username>@<tailscale-ip>
-http://<tailscale-ip>:49001
-```
+Press `Ctrl-C` to stop Macaron. Remote Login, sleep, and Tailscale are restored
+to the state they had before startup. Services are started in the background
+and are not stopped by Macaron.
 
 ## Services
 
-Macaron looks for executable `services/*/start` scripts. For each script, it:
-
-- assigns a port starting at `49001`, ordered alphabetically by directory;
-- passes the port through the `MACARON_AVAILABLE_PORT` environment variable;
-- considers the service started if the script exits successfully.
-
-Macaron has no service-specific requirement. A service runs whenever its
-executable startup script is present inside `services/<service-name>/`.
-
-To add a service, create a directory containing an executable `start` script,
-for example:
+Macaron starts every executable named `start` inside the global configuration
+directory, `$XDG_CONFIG_HOME/macaron/services/` (or
+`~/.config/macaron/services/` when `XDG_CONFIG_HOME` is not set):
 
 ```text
-services/my-service/start
+~/.config/macaron/services/
+└── my-service/
+    └── start
 ```
 
-The script should use `$MACARON_AVAILABLE_PORT` for its assigned port.
+`start` can be a shell script, a compiled binary, or any other executable.
+Macaron runs services in alphabetical order and assigns ports starting at
+`49001`. Each service receives its port through:
 
-## Runtime behavior
+```text
+MACARON_AVAILABLE_PORT
+```
 
-Service scripts are started in the background, and Macaron does not stop them
-when it exits. If Tailscale was stopped before startup, Macaron restores it to
-the stopped state during cleanup; services that were already started may remain
-active locally but will no longer be reachable through Tailscale.
-
-Macaron changes system settings with `sudo systemsetup` and `sudo pmset`. Stop
-it with `Ctrl-C` to trigger restoration of the previous settings.
+For example, a service can use `$MACARON_AVAILABLE_PORT` to bind its HTTP
+server. Macaron prints the resulting URL using the Mac's Tailscale IP.
 
 ## License
 

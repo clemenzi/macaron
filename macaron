@@ -1,14 +1,66 @@
 #!/usr/bin/env bash
 set -e
 
-SERVICES_DIR="$(cd "$(dirname "$0")" && pwd)/services"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/macaron"
+SERVICES_DIR="$CONFIG_DIR/services"
+
+run_check() {
+  if [ -x "$1" ]; then
+    "$1"
+  else
+    bash "$1"
+  fi
+}
 
 doctor() {
-  if tailscale status >/dev/null 2>&1; then
+  local failed=0
+  local found=0
+  local service_dir
+  local service_check
+
+  if ! command -v tailscale >/dev/null 2>&1; then
+    echo "😵 Tailscale: not installed or not on PATH"
+    failed=1
+  elif tailscale status >/dev/null 2>&1; then
     echo "✅ Tailscale: running"
   else
     echo "😵 Tailscale: stopped or needs login"
+    failed=1
   fi
+
+  echo
+  echo "🔍 Checking services..."
+  if [ ! -d "$SERVICES_DIR" ]; then
+    echo "  - no services configured ($SERVICES_DIR)"
+  else
+    for service_dir in "$SERVICES_DIR"/*; do
+      [ -d "$service_dir" ] || continue
+      service_check="$service_dir/doctor"
+      [ -f "$service_check" ] || continue
+      found=1
+
+      if run_check "$service_check"; then
+        echo "  - $(basename "$service_dir"): ok"
+      else
+        echo "  - $(basename "$service_dir"): not ok"
+        failed=1
+      fi
+    done
+  fi
+
+  if [ "$found" -eq 0 ] && [ -d "$SERVICES_DIR" ]; then
+    echo "  - no service checks found"
+  fi
+
+  if [ "$failed" -eq 0 ]; then
+    echo
+    echo "✅ Doctor: all checks passed"
+  else
+    echo
+    echo "😵 Doctor: one or more checks failed"
+  fi
+
+  return "$failed"
 }
 
 start() {
