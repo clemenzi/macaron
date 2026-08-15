@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+set -e
+
+SERVICES_DIR="$(cd "$(dirname "$0")" && pwd)/services"
+
+doctor() {
+  if tailscale status >/dev/null 2>&1; then
+    echo "✅ Tailscale: running"
+  else
+    echo "😵 Tailscale: stopped or needs login"
+  fi
+}
+
+start() {
+  sudo -v
+
+  OLD_REMOTE_LOGIN=$(sudo systemsetup -getremotelogin | awk '{print tolower($3)}')
+  if pmset -g | grep -q 'SleepDisabled.*1'; then
+    OLD_DISABLE_SLEEP=1
+  else
+    OLD_DISABLE_SLEEP=0
+  fi
+
+  if tailscale status >/dev/null 2>&1; then
+    OLD_TAILSCALE_RUNNING=1
+  else
+    OLD_TAILSCALE_RUNNING=0
+  fi
+
+  cleanup() {
+    echo
+    echo "🔙 Restoring previous settings..."
+
+    sudo systemsetup -setremotelogin "$OLD_REMOTE_LOGIN" >/dev/null
+    sudo pmset -a disablesleep "$OLD_DISABLE_SLEEP"
+
+    if [ "$OLD_TAILSCALE_RUNNING" -eq 1 ]; then
+      tailscale up
+    else
+      tailscale down
+    fi
+  }
+
+  trap cleanup EXIT
+  trap 'exit 0' INT TERM
+
+  sudo systemsetup -setremotelogin on >/dev/null
+  echo "✅ Remote Login enabled"
+  sudo pmset -a disablesleep 1
+  echo "✅ Sleep disabled"
+  tailscale up
+  echo "✅ Tailscale started"
+
+  echo
+  echo "🙈 Environment looks good! Now loading services"
+
+  TAILSCALE_IP=$(tailscale ip -4 | head -n 1)
+  PORT=49001
+  LOGS=""
+
+  for SERVICE_START in "$SERVICES_DIR"/*/start; do
+    [ -x "$SERVICE_START" ] || continue
+
+    SERVICE=$(basename "$(dirname "$SERVICE_START")")
+    if MACARON_AVAILABLE_PORT="$PORT" "$SERVICE_START"; then
+      echo "✅ $SERVICE started"
+      LOGS="$LOGS   -> $SERVICE: http://$TAILSCALE_IP:$PORT\n"
+    else
+      echo "😵 Failed to start $SERVICE"
+    fi
+    PORT=$((PORT + 1))
+  done
+
+  echo
+  echo "🏃 Everything looks good! Macaron is running..."
+  echo "   -> Connect via SSH: ssh $(whoami)@$TAILSCALE_IP"
+  printf '%b' "$LOGS"
+
+  while true; do
+    sleep 3600
+  done
+}
+
+if [ "${1:-start}" = "doctor" ]; then
+  doctor
+else
+  start
+fi

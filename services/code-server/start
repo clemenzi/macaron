@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+LOG_DIR="$HOME/.config/macaron/logs"
+mkdir -p "$LOG_DIR"
+
+nohup code-server \
+  --bind-addr "0.0.0.0:$MACARON_AVAILABLE_PORT" \
+  --port "$MACARON_AVAILABLE_PORT" \
+  --auth none \
+  >"$LOG_DIR/code-server-$MACARON_AVAILABLE_PORT.log" 2>&1 &
