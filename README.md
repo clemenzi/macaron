@@ -20,6 +20,10 @@ flowchart LR
     macaron --> awake[Mac stays awake]
 ```
 
+```sh
+curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | bash
+```
+
 ## Requirements
 
 - macOS
