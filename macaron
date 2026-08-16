@@ -12,6 +12,32 @@ run_check() {
   fi
 }
 
+usage() {
+  cat <<EOF
+Usage:
+  macaron [start]
+  macaron doctor
+  macaron install [options] <repository>
+  macaron update
+  macaron delete <service>
+  macaron help
+EOF
+}
+
+install_usage() {
+  cat <<EOF
+Usage: macaron install [options] <repository>
+
+Options:
+  --name <name>       Name of the service directory
+  --branch <branch>   Clone a specific branch
+  --skip-build        Do not run the service build script
+  --skip-doctor       Do not run the service doctor
+  -y, --yes           Automatically confirm the build script
+  -h, --help          Show this help
+EOF
+}
+
 doctor() {
   local failed=0
   local found=0
@@ -64,46 +90,122 @@ doctor() {
 }
 
 install() {
-  [ -n "${1:-}" ] || { echo "Usage: macaron install <repository>" >&2; return 2; }
-  REPO=$1
-  NAME=$(basename "$REPO")
-  NAME="${NAME%.git}"
+  local repo=""
+  local name=""
+  local branch=""
+  local skip_build=0
+  local skip_doctor=0
+  local yes=0
+  local arg
 
-  echo "📦 Installing from $REPO..."
+  while [ "$#" -gt 0 ]; do
+    arg=$1
+    case "$arg" in
+      --name)
+        [ "$#" -ge 2 ] || { echo "Missing value for --name" >&2; install_usage >&2; return 2; }
+        name=$2
+        shift 2
+        ;;
+      --branch)
+        [ "$#" -ge 2 ] || { echo "Missing value for --branch" >&2; install_usage >&2; return 2; }
+        branch=$2
+        shift 2
+        ;;
+      --skip-build)
+        skip_build=1
+        shift
+        ;;
+      --skip-doctor)
+        skip_doctor=1
+        shift
+        ;;
+      -y|--yes)
+        yes=1
+        shift
+        ;;
+      -h|--help)
+        install_usage
+        return 0
+        ;;
+      --)
+        shift
+        [ "$#" -gt 0 ] || { echo "Missing repository" >&2; install_usage >&2; return 2; }
+        repo=$1
+        shift
+        ;;
+      -* )
+        echo "Unknown install option: $arg" >&2
+        install_usage >&2
+        return 2
+        ;;
+      *)
+        [ -z "$repo" ] || { echo "Only one repository can be installed at a time" >&2; install_usage >&2; return 2; }
+        repo=$arg
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "$repo" ] || { echo "Missing repository" >&2; install_usage >&2; return 2; }
+
+  if [ -z "$name" ]; then
+    name=$(basename "$repo")
+    name="${name%.git}"
+  fi
+
+  echo "📦 Installing from $repo..."
 
   # If NAME starts with macaron-service- , strip it off
-  if [[ "$NAME" == macaron-service-* ]]; then
-    NAME="${NAME#macaron-service-}"
+  if [[ "$name" == macaron-service-* ]]; then
+    name="${name#macaron-service-}"
     echo "ℹ️  Stripped macaron-service- prefix from name"
   fi
 
   mkdir -p "$SERVICES_DIR"
-  git clone "$REPO" "$SERVICES_DIR/$NAME"
+  if [ -n "$branch" ]; then
+    git clone --branch "$branch" "$repo" "$SERVICES_DIR/$name"
+  else
+    git clone "$repo" "$SERVICES_DIR/$name"
+  fi
 
   # If the service has a .macaron/build script, run it (after confirmation)
-  if [ -f "$SERVICES_DIR/$NAME/.macaron/build" ]; then
-    echo -n "ℹ️  $NAME has a build script. Run it? [y/N] "
-    read -r answer
-    if [[ "$answer" == [Yy]* ]]; then
-      bash "$SERVICES_DIR/$NAME/.macaron/build"
-    else
-      echo "ℹ️  Skipping build script, the service may not work correctly without it"
+  if [ "$skip_build" -eq 0 ]; then
+    if [ -f "$SERVICES_DIR/$name/.macaron/build" ]; then
+      if [ "$yes" -eq 1 ]; then
+        echo "ℹ️  Running build script for $name (--yes)"
+        bash "$SERVICES_DIR/$name/.macaron/build"
+      else
+        echo -n "ℹ️  $name has a build script. Run it? [y/N] "
+        read -r answer
+        if [[ "$answer" == [Yy]* ]]; then
+          bash "$SERVICES_DIR/$name/.macaron/build"
+        else
+          echo "ℹ️  Skipping build script, the service may not work correctly without it"
+        fi
+      fi
     fi
+  else
+    echo "ℹ️  Skipping build script"
   fi
 
   # After the build script, run the doctor if the service has one
-  if [ -f "$SERVICES_DIR/$NAME/.macaron/doctor" ]; then
-    if run_check "$SERVICES_DIR/$NAME/.macaron/doctor"; then
-      echo "ℹ️  Doctor passed"
-    else
-      echo "😵 Doctor failed, you can run it manually with 'macaron doctor'"
+  if [ "$skip_doctor" -eq 0 ]; then
+    if [ -f "$SERVICES_DIR/$name/.macaron/doctor" ]; then
+      if run_check "$SERVICES_DIR/$name/.macaron/doctor"; then
+        echo "ℹ️  Doctor passed"
+      else
+        echo "😵 Doctor failed, you can run it manually with 'macaron doctor'"
+      fi
     fi
+  else
+    echo "ℹ️  Skipping doctor"
   fi
 
-  echo "✅ Installed from $REPO"
+  echo "✅ Installed from $repo"
 }
 
 delete() {
+  [ "$#" -eq 1 ] || { echo "Usage: macaron delete <service>" >&2; return 2; }
   NAME=$(basename "$1")
   echo "ℹ️  Deleting..."
   if [ -d "$SERVICES_DIR/$NAME" ]; then
@@ -207,14 +309,34 @@ start() {
   done
 }
 
-if [ "${1:-start}" = "doctor" ]; then
-  doctor
-elif [ "${1:-start}" = "install" ]; then
-  install $2
-elif [ "${1:-start}" = "update" ]; then
-  update
-elif [ "${1:-start}" = "delete" ]; then
-  delete $2
-else
-  start
-fi
+COMMAND="${1:-start}"
+[ "$#" -eq 0 ] || shift
+
+case "$COMMAND" in
+  doctor)
+    [ "$#" -eq 0 ] || { echo "Usage: macaron doctor" >&2; exit 2; }
+    doctor
+    ;;
+  install)
+    install "$@"
+    ;;
+  update)
+    [ "$#" -eq 0 ] || { echo "Usage: macaron update" >&2; exit 2; }
+    update
+    ;;
+  delete)
+    delete "$@"
+    ;;
+  start)
+    [ "$#" -eq 0 ] || { echo "Usage: macaron start" >&2; exit 2; }
+    start
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $COMMAND" >&2
+    usage >&2
+    exit 2
+    ;;
+esac
