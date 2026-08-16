@@ -22,6 +22,7 @@ Usage:
   macaron delete <service>               | Delete a service
   macaron list                           | List all services
   macaron help                           | Show this help
+  macaron self-update                    | Update macaron to the latest version
 EOF
 }
 
