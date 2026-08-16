@@ -69,15 +69,50 @@ install() {
   NAME=$(basename "$REPO")
   NAME="${NAME%.git}"
 
+  echo "📦 Installing from $REPO..."
+
   # If NAME starts with macaron-service- , strip it off
   if [[ "$NAME" == macaron-service-* ]]; then
     NAME="${NAME#macaron-service-}"
+    echo "ℹ️  Stripped macaron-service- prefix from name"
   fi
 
-  echo "📦 Installing from $REPO..."
   mkdir -p "$SERVICES_DIR"
   git clone "$REPO" "$SERVICES_DIR/$NAME"
+
+  # If the service has a .macaron/build script, run it (after confirmation)
+  if [ -f "$SERVICES_DIR/$NAME/.macaron/build" ]; then
+    echo -n "ℹ️  $NAME has a build script. Run it? [y/N] "
+    read -r answer
+    if [[ "$answer" == [Yy]* ]]; then
+      bash "$SERVICES_DIR/$NAME/.macaron/build"
+    else
+      echo "ℹ️  Skipping build script, the service may not work correctly without it"
+    fi
+  fi
+
+  # After the build script, run the doctor if the service has one
+  if [ -f "$SERVICES_DIR/$NAME/.macaron/doctor" ]; then
+    if run_check "$SERVICES_DIR/$NAME/.macaron/doctor"; then
+      echo "ℹ️  Doctor passed"
+    else
+      echo "😵 Doctor failed, you can run it manually with 'macaron doctor'"
+    fi
+  fi
+
   echo "✅ Installed from $REPO"
+}
+
+delete() {
+  NAME=$(basename "$1")
+  echo "ℹ️  Deleting..."
+  if [ -d "$SERVICES_DIR/$NAME" ]; then
+    echo "ℹ️  Service directory exists, deleting..."
+    rm -rf "$SERVICES_DIR/$NAME"
+    echo "✅ Deleted"
+  else
+    echo "ℹ️  Service directory does not exist, nothing to delete"
+  fi
 }
 
 update() {
@@ -178,6 +213,8 @@ elif [ "${1:-start}" = "install" ]; then
   install $2
 elif [ "${1:-start}" = "update" ]; then
   update
+elif [ "${1:-start}" = "delete" ]; then
+  delete $2
 else
   start
 fi
