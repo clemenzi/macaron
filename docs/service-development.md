@@ -6,6 +6,7 @@ A service must contain a `.macaron` directory with at least a `start` script:
 service-name/
 └── .macaron/
     ├── build       # optional
+    ├── cleanup     # optional
     ├── doctor      # optional
     └── start       # required
 ```
@@ -40,3 +41,11 @@ used to install dependencies or build the service.
 If present, `.macaron/doctor` is run after the build and by `macaron doctor`. It
 must exit with code `0` when the service is configured correctly and with a
 non-zero code when an error occurs.
+
+## The `cleanup` script
+
+If present, `.macaron/cleanup` is run when `macaron` stops, before Macaron
+restores the previous system settings. Use it to stop processes or remove
+temporary resources created by the service. Cleanup scripts run for every
+installed service; a failing script is reported but does not prevent the other
+services or Macaron itself from being cleaned up.

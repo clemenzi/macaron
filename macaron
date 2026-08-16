@@ -275,7 +275,28 @@ start() {
   fi
 
   cleanup() {
+    local service_dir
+    local service_name
+    local service_cleanup
+
     echo
+    echo "🧹 Cleaning up services..."
+
+    if [ -d "$SERVICES_DIR" ]; then
+      for service_dir in "$SERVICES_DIR"/*; do
+        [ -d "$service_dir" ] || continue
+        service_cleanup="$service_dir/.macaron/cleanup"
+        [ -f "$service_cleanup" ] || continue
+
+        service_name=$(basename "$service_dir")
+        if run_check "$service_cleanup"; then
+          echo "✅ $service_name cleaned up"
+        else
+          echo "😵 Failed to clean up $service_name" >&2
+        fi
+      done
+    fi
+
     echo "🔙 Restoring previous settings..."
 
     sudo systemsetup -setremotelogin "$OLD_REMOTE_LOGIN" >/dev/null
