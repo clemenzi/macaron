@@ -1,87 +1,67 @@
 # Macaron
 
-Macaron turns your Mac into a remote workstation.
+Macaron turns your Mac into a remotely accessible workstation. It uses
+[Tailscale][tailscale] to connect to your private network, keeps your Mac
+awake, and starts the services you have installed.
 
-It uses [Tailscale][tailscale] to make your Mac reachable from your private
-network, keeps it awake, enables SSH, and starts the services you configure.
+## Requirements
 
-```mermaid
-flowchart LR
-    device[Remote device] <--> tailnet((Tailscale))
+- macOS;
+- [Tailscale][tailscale] installed and authenticated;
+- `sudo` access.
 
-    subgraph mac[Your Mac]
-        macaron[Macaron]
-        services[Configured services]
-    end
+## Installation
 
-    tailnet <--> macaron
-    macaron --> services
-    macaron --> ssh[SSH]
-    macaron --> awake[Mac stays awake]
-```
+Install Macaron with:
 
 ```sh
 curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | sudo bash
 ```
 
-## Requirements
+This installs `macaron` in `/usr/local/bin`.
 
-- macOS
-- Tailscale installed, authenticated, and available on `PATH`
-- `sudo` access
-- Any dependencies required by your services
+## Starting Macaron
 
-## Usage
-
-Start Macaron from the project directory:
+Start Macaron with:
 
 ```sh
-./macaron
+macaron
 ```
 
-It will:
+When it starts, Macaron enables Remote Login (SSH), prevents your Mac from
+going to sleep, starts Tailscale, and loads the configured services. It then
+prints the SSH address and the URLs available over the Tailscale network.
 
-- enable Remote Login;
-- temporarily disable sleep;
-- run `tailscale up`;
-- start the configured services;
-- print the SSH address and service URLs.
+Press `Ctrl-C` to stop it. Remote Login, sleep, and Tailscale are restored to
+their previous state.
 
-Run the environment and configured-service checks without starting the
-workstation. The command exits non-zero if any check fails:
+## Service management
+
+Macaron does not include any default services. You can install a service from a
+Git repository with:
 
 ```sh
-./macaron doctor
+macaron install <repository>
 ```
 
-Press `Ctrl-C` to stop Macaron. Remote Login, sleep, and Tailscale are restored
-to the state they had before startup. Services are started in the background
-and are not stopped by Macaron.
+The most useful commands are:
 
-## Services
-
-Macaron starts every executable named `start` inside each service's `.macaron`
-directory under the global configuration directory,
-`$XDG_CONFIG_HOME/macaron/services/` (or
-`~/.config/macaron/services/` when `XDG_CONFIG_HOME` is not set):
-
-```text
-~/.config/macaron/services/
-└── my-service/
-    └── .macaron/
-        └── start
+```sh
+macaron list                  # List installed services
+macaron update                # Update services
+macaron delete <service>      # Remove a service
+macaron doctor                # Check the configuration
 ```
 
-`start` can be a shell script, a compiled binary, or any other executable.
-Macaron runs services in alphabetical order and assigns ports starting at
-`49001`. Each service receives its port through:
+For the complete documentation, see:
 
-```text
-MACARON_AVAILABLE_PORT
-```
+- [service management](docs/services.md), for installing and using services;
+- [service development](docs/service-development.md), for creating a service;
+- [advanced commands](docs/commands.md), for all available options.
 
-For example, a service can use `$MACARON_AVAILABLE_PORT` to bind its HTTP
-server. Macaron prints the resulting URL using the Mac's Tailscale IP.
+> [!NOTE]
+> Services are started while Macaron is running. Macaron does not explicitly
+> stop them when it exits.
 
 ## License
 
