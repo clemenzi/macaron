@@ -39,7 +39,8 @@ script when present and reports this to the user. No confirmation is requested.
 
 `disable` moves a service from `~/.config/macaron/services/` to
 `~/.config/macaron/services-disabled/`, so Macaron will not start, update, or
-check it. Use `enable` to move it back.
+check it. Use `enable` to move it back. `list` shows enabled and disabled
+services separately.
 
 ## Checking the configuration
 

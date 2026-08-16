@@ -7,26 +7,23 @@ DISABLED_SERVICES_DIR="$CONFIG_DIR/services-disabled"
 MAX_OUTPUT_LINES=4
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  GRAY=$'\033[90m'
-  GREEN=$'\033[32m'
-  YELLOW=$'\033[33m'
-  RED=$'\033[31m'
+  WHITE=$'\033[37m'
   DIM_GRAY=$'\033[2;90m'
+  DIM_GRAY_ITALIC=$'\033[2;3;90m'
   RESET=$'\033[0m'
 else
-  GRAY=""
-  GREEN=""
-  YELLOW=""
-  RED=""
+  WHITE=""
   DIM_GRAY=""
+  DIM_GRAY_ITALIC=""
   RESET=""
 fi
 
-log() { printf '%s%s%s\n' "$GRAY" "$*" "$RESET"; }
-log_success() { printf '%s%s%s\n' "$GREEN" "$*" "$RESET"; }
-log_warn() { printf '%s%s%s\n' "$YELLOW" "$*" "$RESET"; }
-log_error() { printf '%s%s%s\n' "$RED" "$*" "$RESET" >&2; }
+log() { printf '%s%s%s\n' "$WHITE" "$*" "$RESET"; }
+log_success() { log "$@"; }
+log_warn() { log "$@"; }
+log_error() { printf '%s%s%s\n' "$WHITE" "$*" "$RESET" >&2; }
 log_script() { printf '%s%s%s\n' "$DIM_GRAY" "$*" "$RESET"; }
+log_empty_script() { printf '%s%s%s\n' "$DIM_GRAY_ITALIC" "$*" "$RESET"; }
 
 stream_output() {
   local line
@@ -38,6 +35,20 @@ stream_output() {
       log_script "│ $line"
     fi
   done
+
+  if [ "$line_count" -eq 0 ]; then
+    log_empty_script "│ no output from script"
+  fi
+}
+
+run_script() {
+  local script=$1
+
+  if [ -x "$script" ]; then
+    "$script"
+  else
+    bash "$script"
+  fi
 }
 
 run_check() {
@@ -46,13 +57,8 @@ run_check() {
   local status
 
   log_script "╭─ $label logs"
-  if [ -x "$script" ]; then
-    "$script" 2>&1 | stream_output
-    status=${PIPESTATUS[0]}
-  else
-    bash "$script" 2>&1 | stream_output
-    status=${PIPESTATUS[0]}
-  fi
+  run_script "$script" 2>&1 | stream_output
+  status=${PIPESTATUS[0]}
   log_script "╰─ logs end"
   return "$status"
 }
@@ -92,15 +98,19 @@ doctor() {
   local found=0
   local service_dir
   local service_check
+  local tailscale_status
 
   if ! command -v tailscale >/dev/null 2>&1; then
     log_error "😵 Tailscale: not installed or not on PATH"
     failed=1
-  elif tailscale status >/dev/null 2>&1; then
-    log_success "✅ Tailscale: running"
-  else
-    log_error "😵 Tailscale: stopped or needs login"
+  elif ! tailscale_status=$(tailscale status --json 2>/dev/null); then
+    log_error "😵 Tailscale: unable to determine login status"
     failed=1
+  elif printf '%s\n' "$tailscale_status" | grep -q '"BackendState": "NeedsLogin"'; then
+    log_error "😵 Tailscale: not logged in"
+    failed=1
+  else
+    log_success "✅ Tailscale: logged in"
   fi
 
   echo
@@ -114,7 +124,7 @@ doctor() {
       [ -f "$service_check" ] || continue
       found=1
 
-      if run_check "$service_check" "$(basename "$service_dir") · doctor"; then
+      if run_script "$service_check"; then
         log_success "  - $(basename "$service_dir"): ok"
       else
         log_error "  - $(basename "$service_dir"): not ok"
@@ -333,8 +343,17 @@ update() {
 }
 
 list() {
+  local service_dir
+
   log "ℹ️  Installed services:"
   for service_dir in "$SERVICES_DIR"/*; do
+    if [ -d "$service_dir" ]; then
+      log "   - $(basename "$service_dir")"
+    fi
+  done
+
+  log "ℹ️  Disabled services:"
+  for service_dir in "$DISABLED_SERVICES_DIR"/*; do
     if [ -d "$service_dir" ]; then
       log "   - $(basename "$service_dir")"
     fi
@@ -441,7 +460,7 @@ start() {
   echo
   log_success "🏃 Macaron is running"
   log "   → SSH: ssh $(whoami)@$TAILSCALE_IP"
-  printf '%b' "$GRAY$LOGS$RESET"
+  printf '%b' "$WHITE$LOGS$RESET"
 
   while true; do
     sleep 3600

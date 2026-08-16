@@ -5,17 +5,15 @@ set -euo pipefail
 INSTALL_PATH="/usr/local/bin/macaron"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  GRAY=$'\033[90m'
-  GREEN=$'\033[32m'
+  WHITE=$'\033[37m'
   RESET=$'\033[0m'
 else
-  GRAY=""
-  GREEN=""
+  WHITE=""
   RESET=""
 fi
 
-log() { printf '%s%s%s\n' "$GRAY" "$*" "$RESET"; }
-log_success() { printf '%s%s%s\n' "$GREEN" "$*" "$RESET"; }
+log() { printf '%s%s%s\n' "$WHITE" "$*" "$RESET"; }
+log_success() { log "$@"; }
 
 if [ -e "$INSTALL_PATH" ]; then
   IS_UPDATE=true
