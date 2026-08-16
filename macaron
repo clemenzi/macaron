@@ -3,13 +3,57 @@ set -e
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/macaron"
 SERVICES_DIR="$CONFIG_DIR/services"
+MAX_OUTPUT_LINES=4
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  GRAY=$'\033[90m'
+  GREEN=$'\033[32m'
+  YELLOW=$'\033[33m'
+  RED=$'\033[31m'
+  DIM_GRAY=$'\033[2;90m'
+  RESET=$'\033[0m'
+else
+  GRAY=""
+  GREEN=""
+  YELLOW=""
+  RED=""
+  DIM_GRAY=""
+  RESET=""
+fi
+
+log() { printf '%s%s%s\n' "$GRAY" "$*" "$RESET"; }
+log_success() { printf '%s%s%s\n' "$GREEN" "$*" "$RESET"; }
+log_warn() { printf '%s%s%s\n' "$YELLOW" "$*" "$RESET"; }
+log_error() { printf '%s%s%s\n' "$RED" "$*" "$RESET" >&2; }
+log_script() { printf '%s%s%s\n' "$DIM_GRAY" "$*" "$RESET"; }
+
+stream_output() {
+  local line
+  local line_count=0
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_count=$((line_count + 1))
+    if [ "$line_count" -le "$MAX_OUTPUT_LINES" ]; then
+      log_script "│ $line"
+    fi
+  done
+}
 
 run_check() {
-  if [ -x "$1" ]; then
-    "$1"
+  local script=$1
+  local label=${2:-script}
+  local status
+
+  log_script "╭─ $label logs"
+  if [ -x "$script" ]; then
+    "$script" 2>&1 | stream_output
+    status=${PIPESTATUS[0]}
   else
-    bash "$1"
+    bash "$script" 2>&1 | stream_output
+    status=${PIPESTATUS[0]}
   fi
+  log_script "╰─ logs end"
+  return "$status"
 }
 
 usage() {
@@ -47,19 +91,19 @@ doctor() {
   local service_check
 
   if ! command -v tailscale >/dev/null 2>&1; then
-    echo "😵 Tailscale: not installed or not on PATH"
+    log_error "😵 Tailscale: not installed or not on PATH"
     failed=1
   elif tailscale status >/dev/null 2>&1; then
-    echo "✅ Tailscale: running"
+    log_success "✅ Tailscale: running"
   else
-    echo "😵 Tailscale: stopped or needs login"
+    log_error "😵 Tailscale: stopped or needs login"
     failed=1
   fi
 
   echo
-  echo "🔍 Checking services..."
+  log "🔍 Checking services..."
   if [ ! -d "$SERVICES_DIR" ]; then
-    echo "  - no services configured ($SERVICES_DIR)"
+    log "  - no services configured ($SERVICES_DIR)"
   else
     for service_dir in "$SERVICES_DIR"/*; do
       [ -d "$service_dir" ] || continue
@@ -67,25 +111,25 @@ doctor() {
       [ -f "$service_check" ] || continue
       found=1
 
-      if run_check "$service_check"; then
-        echo "  - $(basename "$service_dir"): ok"
+      if run_check "$service_check" "$(basename "$service_dir") · doctor"; then
+        log_success "  - $(basename "$service_dir"): ok"
       else
-        echo "  - $(basename "$service_dir"): not ok"
+        log_error "  - $(basename "$service_dir"): not ok"
         failed=1
       fi
     done
   fi
 
   if [ "$found" -eq 0 ] && [ -d "$SERVICES_DIR" ]; then
-    echo "  - no service checks found"
+    log "  - no service checks found"
   fi
 
   if [ "$failed" -eq 0 ]; then
     echo
-    echo "✅ Doctor: all checks passed"
+    log_success "✅ Doctor: all checks passed"
   else
     echo
-    echo "😵 Doctor: one or more checks failed"
+    log_error "😵 Doctor: one or more checks failed"
   fi
 
   return "$failed"
@@ -155,67 +199,67 @@ install() {
     name="${name%.git}"
   fi
 
-  echo "📦 Installing from $repo..."
+  log "📦 Installing from $repo..."
 
   # If NAME starts with macaron-service- , strip it off
   if [[ "$name" == macaron-service-* ]]; then
     name="${name#macaron-service-}"
-    echo "ℹ️  Stripped macaron-service- prefix from name"
+    log "ℹ️  Stripped macaron-service- prefix from name"
   fi
 
   mkdir -p "$SERVICES_DIR"
   if [ -n "$branch" ]; then
-    git clone --branch "$branch" "$repo" "$SERVICES_DIR/$name"
+    git clone --quiet --branch "$branch" "$repo" "$SERVICES_DIR/$name"
   else
-    git clone "$repo" "$SERVICES_DIR/$name"
+    git clone --quiet "$repo" "$SERVICES_DIR/$name"
   fi
 
   # If the service has a .macaron/build script, run it (after confirmation)
   if [ "$skip_build" -eq 0 ]; then
     if [ -f "$SERVICES_DIR/$name/.macaron/build" ]; then
       if [ "$yes" -eq 1 ]; then
-        echo "ℹ️  Running build script for $name (--yes)"
-        bash "$SERVICES_DIR/$name/.macaron/build"
+        log "🔨 Building $name..."
+        run_check "$SERVICES_DIR/$name/.macaron/build" "$name · build"
       else
         echo -n "ℹ️  $name has a build script. Run it? [y/N] "
         read -r answer
         if [[ "$answer" == [Yy]* ]]; then
-          bash "$SERVICES_DIR/$name/.macaron/build"
+          log "🔨 Building $name..."
+          run_check "$SERVICES_DIR/$name/.macaron/build" "$name · build"
         else
-          echo "ℹ️  Skipping build script, the service may not work correctly without it"
+          log_warn "⚠️  Build skipped; the service may not work correctly"
         fi
       fi
     fi
   else
-    echo "ℹ️  Skipping build script"
+    log "ℹ️  Build skipped"
   fi
 
   # After the build script, run the doctor if the service has one
   if [ "$skip_doctor" -eq 0 ]; then
     if [ -f "$SERVICES_DIR/$name/.macaron/doctor" ]; then
-      if run_check "$SERVICES_DIR/$name/.macaron/doctor"; then
-        echo "ℹ️  Doctor passed"
+      if run_check "$SERVICES_DIR/$name/.macaron/doctor" "$name · doctor"; then
+        log_success "✅ Doctor passed"
       else
-        echo "😵 Doctor failed, you can run it manually with 'macaron doctor'"
+        log_error "😵 Doctor failed; run 'macaron doctor' for details"
       fi
     fi
   else
-    echo "ℹ️  Skipping doctor"
+    log "ℹ️  Doctor skipped"
   fi
 
-  echo "✅ Installed from $repo"
+  log_success "✅ Installed from $repo"
 }
 
 delete() {
   [ "$#" -eq 1 ] || { echo "Usage: macaron delete <service>" >&2; return 2; }
   NAME=$(basename "$1")
-  echo "ℹ️  Deleting..."
+  log "🗑️  Deleting $NAME..."
   if [ -d "$SERVICES_DIR/$NAME" ]; then
-    echo "ℹ️  Service directory exists, deleting..."
     rm -rf "$SERVICES_DIR/$NAME"
-    echo "✅ Deleted"
+    log_success "✅ $NAME deleted"
   else
-    echo "ℹ️  Service directory does not exist, nothing to delete"
+    log "ℹ️  $NAME is not installed"
   fi
 }
 
@@ -224,37 +268,37 @@ update() {
   local service_name
   local build_script
 
-  echo "🔄 Updating..."
+  log "🔄 Updating services..."
   for service_dir in "$SERVICES_DIR"/*; do
     if [ -d "$service_dir" ]; then
       cd "$service_dir"
-      git pull &>/dev/null
+      git pull --quiet
 
       service_name=$(basename "$service_dir")
-      echo "✅ $service_name updated ($(git rev-parse --short HEAD))"
+      log_success "✅ $service_name updated ($(git rev-parse --short HEAD))"
 
       build_script="$service_dir/.macaron/build"
       if [ -f "$build_script" ]; then
-        echo "🔨 Running build script for $service_name (automatic after update)"
-        bash "$build_script"
+        log "🔨 Building $service_name..."
+        run_check "$build_script" "$service_name · build"
       fi
     fi
   done
-  echo "✅ Update complete"
+  log_success "✅ Update complete"
 }
 
 list() {
-  echo "ℹ️  Installed services:"
+  log "ℹ️  Installed services:"
   for service_dir in "$SERVICES_DIR"/*; do
     if [ -d "$service_dir" ]; then
-      echo "   - $(basename "$service_dir")"
+      log "   - $(basename "$service_dir")"
     fi
   done
 }
 
 self-update() {
   sudo -v
-  echo "🔄 Downloading latest macaron installer..."
+  log "🔄 Downloading latest macaron installer..."
   curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | sudo bash
 }
 
@@ -280,7 +324,7 @@ start() {
     local service_cleanup
 
     echo
-    echo "🧹 Cleaning up services..."
+    log "🧹 Cleaning up services..."
 
     if [ -d "$SERVICES_DIR" ]; then
       for service_dir in "$SERVICES_DIR"/*; do
@@ -289,15 +333,15 @@ start() {
         [ -f "$service_cleanup" ] || continue
 
         service_name=$(basename "$service_dir")
-        if run_check "$service_cleanup"; then
-          echo "✅ $service_name cleaned up"
+        if run_check "$service_cleanup" "$service_name · cleanup"; then
+          log_success "✅ $service_name cleaned up"
         else
-          echo "😵 Failed to clean up $service_name" >&2
+          log_error "😵 Failed to clean up $service_name"
         fi
       done
     fi
 
-    echo "🔙 Restoring previous settings..."
+    log "🔙 Restoring previous settings..."
 
     sudo systemsetup -setremotelogin "$OLD_REMOTE_LOGIN" >/dev/null
     sudo pmset -a disablesleep "$OLD_DISABLE_SLEEP"
@@ -313,14 +357,14 @@ start() {
   trap 'exit 0' INT TERM
 
   sudo systemsetup -setremotelogin on >/dev/null
-  echo "✅ Remote Login enabled"
+  log_success "✅ Remote Login enabled"
   sudo pmset -a disablesleep 1
-  echo "✅ Sleep disabled"
+  log_success "✅ Sleep disabled"
   tailscale up
-  echo "✅ Tailscale started"
+  log_success "✅ Tailscale started"
 
   echo
-  echo "🙈 Environment looks good! Now loading services"
+  log "🙈 Environment ready; loading services..."
 
   TAILSCALE_IP=$(tailscale ip -4 | head -n 1)
   PORT=49001
@@ -335,24 +379,24 @@ start() {
       FOUND_SERVICES=1
 
       SERVICE=$(basename "$SERVICE_DIR")
-      if MACARON_AVAILABLE_PORT="$PORT" run_check "$SERVICE_START"; then
-        echo "✅ $SERVICE started"
+      if MACARON_AVAILABLE_PORT="$PORT" run_check "$SERVICE_START" "$SERVICE · start"; then
+        log_success "✅ $SERVICE started"
         LOGS="$LOGS   -> $SERVICE: http://$TAILSCALE_IP:$PORT\n"
       else
-        echo "😵 Failed to start $SERVICE"
+        log_error "😵 Failed to start $SERVICE"
       fi
       PORT=$((PORT + 1))
     done
   fi
 
   if [ "$FOUND_SERVICES" -eq 0 ]; then
-    echo "⚠️  No services found in $SERVICES_DIR"
+    log_warn "⚠️  No services found in $SERVICES_DIR"
   fi
 
   echo
-  echo "🏃 Everything looks good! Macaron is running..."
-  echo "   -> Connect via SSH: ssh $(whoami)@$TAILSCALE_IP"
-  printf '%b' "$LOGS"
+  log_success "🏃 Macaron is running"
+  log "   → SSH: ssh $(whoami)@$TAILSCALE_IP"
+  printf '%b' "$GRAY$LOGS$RESET"
 
   while true; do
     sleep 3600

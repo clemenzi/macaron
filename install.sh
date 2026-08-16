@@ -4,12 +4,25 @@ set -euo pipefail
 
 INSTALL_PATH="/usr/local/bin/macaron"
 
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  GRAY=$'\033[90m'
+  GREEN=$'\033[32m'
+  RESET=$'\033[0m'
+else
+  GRAY=""
+  GREEN=""
+  RESET=""
+fi
+
+log() { printf '%s%s%s\n' "$GRAY" "$*" "$RESET"; }
+log_success() { printf '%s%s%s\n' "$GREEN" "$*" "$RESET"; }
+
 if [ -e "$INSTALL_PATH" ]; then
   IS_UPDATE=true
-  echo "🔄 Updating Macaron..."
+  log "🔄 Updating Macaron..."
 else
   IS_UPDATE=false
-  echo "🔄 Downloading latest Macaron..."
+  log "🔄 Downloading latest Macaron..."
 fi
 
 TARGET_USER="${SUDO_USER:-$USER}"
@@ -31,7 +44,7 @@ if [ -n "${SUDO_USER:-}" ]; then
 fi
 
 if [ "$IS_UPDATE" = true ]; then
-  echo "✅ Macaron updated successfully!"
+  log_success "✅ Macaron updated successfully!"
 else
-  echo "✅ Macaron installed successfully!"
+  log_success "✅ Macaron installed successfully!"
 fi
