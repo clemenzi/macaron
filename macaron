@@ -15,12 +15,13 @@ run_check() {
 usage() {
   cat <<EOF
 Usage:
-  macaron [start]
-  macaron doctor
-  macaron install [options] <repository>
-  macaron update
-  macaron delete <service>
-  macaron help
+  macaron [start]                        | Start macaron
+  macaron doctor                         | Check if everything is correctly configured and working
+  macaron install [options] <repository> | Install a service from a Git repository
+  macaron update                         | Update all services
+  macaron delete <service>               | Delete a service
+  macaron list                           | List all services
+  macaron help                           | Show this help
 EOF
 }
 
@@ -229,6 +230,15 @@ update() {
   echo "✅ Update complete"
 }
 
+list() {
+  echo "ℹ️  Installed services:"
+  for service_dir in "$SERVICES_DIR"/*; do
+    if [ -d "$service_dir" ]; then
+      echo "   - $(basename "$service_dir")"
+    fi
+  done
+}
+
 start() {
   sudo -v
 
@@ -326,6 +336,9 @@ case "$COMMAND" in
     ;;
   delete)
     delete "$@"
+    ;;
+  list)
+    list
     ;;
   start)
     [ "$#" -eq 0 ] || { echo "Usage: macaron start" >&2; exit 2; }
