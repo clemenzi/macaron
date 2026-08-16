@@ -30,6 +30,9 @@ macaron delete <service-name>
 macaron list
 ```
 
+After updating a service, Macaron automatically runs its `.macaron/build`
+script when present and reports this to the user. No confirmation is requested.
+
 `delete` takes the service directory name, not the repository URL.
 
 ## Checking the configuration

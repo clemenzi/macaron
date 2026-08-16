@@ -220,12 +220,24 @@ delete() {
 }
 
 update() {
+  local service_dir
+  local service_name
+  local build_script
+
   echo "🔄 Updating..."
   for service_dir in "$SERVICES_DIR"/*; do
     if [ -d "$service_dir" ]; then
       cd "$service_dir"
       git pull &>/dev/null
-      echo "✅ $(basename "$service_dir") updated ($(git rev-parse --short HEAD))"
+
+      service_name=$(basename "$service_dir")
+      echo "✅ $service_name updated ($(git rev-parse --short HEAD))"
+
+      build_script="$service_dir/.macaron/build"
+      if [ -f "$build_script" ]; then
+        echo "🔨 Running build script for $service_name (automatic after update)"
+        bash "$build_script"
+      fi
     fi
   done
   echo "✅ Update complete"
