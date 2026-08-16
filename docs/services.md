@@ -22,10 +22,12 @@ macaron install --name <name> <repository>
 During installation, if the repository contains a `.macaron/build` script,
 Macaron asks for confirmation before running it.
 
-## Updating and removing services
+## Updating, disabling, and removing services
 
 ```sh
 macaron update
+macaron disable <service-name>
+macaron enable <service-name>
 macaron delete <service-name>
 macaron list
 ```
@@ -34,6 +36,10 @@ After updating a service, Macaron automatically runs its `.macaron/build`
 script when present and reports this to the user. No confirmation is requested.
 
 `delete` takes the service directory name, not the repository URL.
+
+`disable` moves a service from `~/.config/macaron/services/` to
+`~/.config/macaron/services-disabled/`, so Macaron will not start, update, or
+check it. Use `enable` to move it back.
 
 ## Checking the configuration
 

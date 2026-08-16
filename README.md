@@ -49,6 +49,8 @@ The most useful commands are:
 ```sh
 macaron list                  # List installed services
 macaron update                # Update services
+macaron disable <service>     # Disable a service
+macaron enable <service>      # Enable a service
 macaron delete <service>      # Remove a service
 macaron doctor                # Check the configuration
 macaron self-update           # Update macaron itself

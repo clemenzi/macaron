@@ -38,7 +38,7 @@ trap 'rm -f "$TEMP_FILE"' EXIT
 curl -fsSL "https://raw.githubusercontent.com/clemenzi/macaron/main/macaron" -o "$TEMP_FILE"
 install -m 755 "$TEMP_FILE" "$INSTALL_PATH"
 
-mkdir -p "$TARGET_HOME/.config/macaron/services"
+mkdir -p "$TARGET_HOME/.config/macaron/services" "$TARGET_HOME/.config/macaron/services-disabled"
 if [ -n "${SUDO_USER:-}" ]; then
   chown -R "$TARGET_USER" "$TARGET_HOME/.config/macaron"
 fi

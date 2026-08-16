@@ -3,6 +3,7 @@ set -e
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/macaron"
 SERVICES_DIR="$CONFIG_DIR/services"
+DISABLED_SERVICES_DIR="$CONFIG_DIR/services-disabled"
 MAX_OUTPUT_LINES=4
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -63,6 +64,8 @@ Usage:
   macaron doctor                         | Check if everything is correctly configured and working
   macaron install [options] <repository> | Install a service from a Git repository
   macaron update                         | Update all services
+  macaron disable <service>              | Disable a service
+  macaron enable <service>               | Enable a service
   macaron delete <service>               | Delete a service
   macaron list                           | List all services
   macaron help                           | Show this help
@@ -263,6 +266,48 @@ delete() {
   fi
 }
 
+disable() {
+  local name
+
+  [ "$#" -eq 1 ] || { echo "Usage: macaron disable <service>" >&2; return 2; }
+  name=$(basename "$1")
+
+  if [ ! -d "$SERVICES_DIR/$name" ]; then
+    log "ℹ️  $name is not enabled"
+    return 0
+  fi
+
+  if [ -e "$DISABLED_SERVICES_DIR/$name" ]; then
+    log_error "😵 Cannot disable $name: a disabled service with that name already exists"
+    return 1
+  fi
+
+  mkdir -p "$DISABLED_SERVICES_DIR"
+  mv "$SERVICES_DIR/$name" "$DISABLED_SERVICES_DIR/$name"
+  log_success "✅ $name disabled"
+}
+
+enable() {
+  local name
+
+  [ "$#" -eq 1 ] || { echo "Usage: macaron enable <service>" >&2; return 2; }
+  name=$(basename "$1")
+
+  if [ ! -d "$DISABLED_SERVICES_DIR/$name" ]; then
+    log "ℹ️  $name is not disabled"
+    return 0
+  fi
+
+  if [ -e "$SERVICES_DIR/$name" ]; then
+    log_error "😵 Cannot enable $name: an enabled service with that name already exists"
+    return 1
+  fi
+
+  mkdir -p "$SERVICES_DIR"
+  mv "$DISABLED_SERVICES_DIR/$name" "$SERVICES_DIR/$name"
+  log_success "✅ $name enabled"
+}
+
 update() {
   local service_dir
   local service_name
@@ -420,6 +465,12 @@ case "$COMMAND" in
     ;;
   delete)
     delete "$@"
+    ;;
+  disable)
+    disable "$@"
+    ;;
+  enable)
+    enable "$@"
     ;;
   list)
     list

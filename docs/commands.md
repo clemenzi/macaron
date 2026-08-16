@@ -7,6 +7,8 @@ macaron [start]
 macaron doctor
 macaron install [options] <repository>
 macaron update
+macaron disable <service>
+macaron enable <service>
 macaron delete <service>
 macaron list
 macaron help
