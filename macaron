@@ -35,7 +35,7 @@ doctor() {
   else
     for service_dir in "$SERVICES_DIR"/*; do
       [ -d "$service_dir" ] || continue
-      service_check="$service_dir/doctor"
+      service_check="$service_dir/.macaron/doctor"
       [ -f "$service_check" ] || continue
       found=1
 
@@ -143,7 +143,7 @@ start() {
   if [ -d "$SERVICES_DIR" ]; then
     for SERVICE_DIR in "$SERVICES_DIR"/*; do
       [ -d "$SERVICE_DIR" ] || continue
-      SERVICE_START="$SERVICE_DIR/start"
+      SERVICE_START="$SERVICE_DIR/.macaron/start"
       [ -f "$SERVICE_START" ] || continue
       FOUND_SERVICES=1
 

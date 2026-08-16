@@ -60,14 +60,16 @@ and are not stopped by Macaron.
 
 ## Services
 
-Macaron starts every executable named `start` inside the global configuration
-directory, `$XDG_CONFIG_HOME/macaron/services/` (or
+Macaron starts every executable named `start` inside each service's `.macaron`
+directory under the global configuration directory,
+`$XDG_CONFIG_HOME/macaron/services/` (or
 `~/.config/macaron/services/` when `XDG_CONFIG_HOME` is not set):
 
 ```text
 ~/.config/macaron/services/
 └── my-service/
-    └── start
+    └── .macaron/
+        └── start
 ```
 
 `start` can be a shell script, a compiled binary, or any other executable.
