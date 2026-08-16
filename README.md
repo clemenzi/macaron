@@ -63,8 +63,8 @@ For the complete documentation, see:
 - [advanced commands](docs/commands.md), for all available options.
 
 > [!NOTE]
-> Services are started while Macaron is running. Macaron does not explicitly
-> stop them when it exits.
+> Services run while Macaron is running. Macaron tracks and stops their
+> foreground service processes when it exits.
 
 ## License
 

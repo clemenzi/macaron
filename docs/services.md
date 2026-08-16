@@ -36,6 +36,8 @@ After updating a service, Macaron automatically runs its `.macaron/build`
 script when present and reports this to the user. No confirmation is requested.
 
 `delete` takes the service directory name, not the repository URL.
+It removes either an enabled or disabled service. If a service with the same
+name is present in both locations, Macaron refuses to delete either copy.
 
 `disable` moves a service from `~/.config/macaron/services/` to
 `~/.config/macaron/services-disabled/`, so Macaron will not start, update, or
@@ -51,6 +53,9 @@ macaron doctor
 This command checks that Tailscale is installed and active and, when available,
 runs each service's `.macaron/doctor` check. It returns a non-zero exit code if
 any check fails.
+
+Every `.macaron` script runs with its service repository as the working
+directory.
 
 For the structure required to create a service, see the [service development
 guide](service-development.md).

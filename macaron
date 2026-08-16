@@ -43,11 +43,33 @@ stream_output() {
 
 run_script() {
   local script=$1
+  local service_dir
 
-  if [ -x "$script" ]; then
-    "$script"
+  service_dir=$(dirname "$(dirname "$script")")
+
+  (
+    cd "$service_dir" || exit 1
+    if [ -x "$script" ]; then
+      "$script"
+    else
+      bash "$script"
+    fi
+  )
+}
+
+start_service() {
+  local service_start=$1
+  local available_port=$2
+  local service_dir
+
+  service_dir=$(dirname "$(dirname "$service_start")")
+
+  cd "$service_dir" || exit 1
+  export MACARON_AVAILABLE_PORT="$available_port"
+  if [ -x "$service_start" ]; then
+    exec "$service_start"
   else
-    bash "$script"
+    exec bash "$service_start"
   fi
 }
 
@@ -124,7 +146,7 @@ doctor() {
       [ -f "$service_check" ] || continue
       found=1
 
-      if run_script "$service_check"; then
+      if run_check "$service_check" "$(basename "$service_dir") · doctor"; then
         log_success "  - $(basename "$service_dir"): ok"
       else
         log_error "  - $(basename "$service_dir"): not ok"
@@ -265,14 +287,29 @@ install() {
 }
 
 delete() {
+  local name
+  local enabled_service
+  local disabled_service
+
   [ "$#" -eq 1 ] || { echo "Usage: macaron delete <service>" >&2; return 2; }
-  NAME=$(basename "$1")
-  log "🗑️  Deleting $NAME..."
-  if [ -d "$SERVICES_DIR/$NAME" ]; then
-    rm -rf "$SERVICES_DIR/$NAME"
-    log_success "✅ $NAME deleted"
+  name=$(basename "$1")
+  enabled_service="$SERVICES_DIR/$name"
+  disabled_service="$DISABLED_SERVICES_DIR/$name"
+
+  if [ -d "$enabled_service" ] && [ -d "$disabled_service" ]; then
+    log_error "😵 Cannot delete $name: it exists in both enabled and disabled services"
+    return 1
+  fi
+
+  log "🗑️  Deleting $name..."
+  if [ -d "$enabled_service" ]; then
+    rm -rf "$enabled_service"
+    log_success "✅ $name deleted"
+  elif [ -d "$disabled_service" ]; then
+    rm -rf "$disabled_service"
+    log_success "✅ $name deleted"
   else
-    log "ℹ️  $NAME is not installed"
+    log "ℹ️  $name is not installed"
   fi
 }
 
@@ -367,6 +404,19 @@ self-update() {
 }
 
 start() {
+  local service_dir
+  local service_name
+  local service_cleanup
+  local service_start
+  local port
+  local pid
+  local status
+  local index
+  local tailscale_ip
+  local service_log
+  local logs=""
+  local found_services=0
+
   sudo -v
 
   OLD_REMOTE_LOGIN=$(sudo systemsetup -getremotelogin | awk '{print tolower($3)}')
@@ -382,12 +432,62 @@ start() {
     OLD_TAILSCALE_RUNNING=0
   fi
 
+  SERVICE_PIDS=()
+  SERVICE_NAMES=()
+  SERVICE_PORTS=()
+  SERVICE_LOG_PIDS=()
+  SERVICE_LOG_DIR=""
+
+  port_is_available() {
+    ! lsof -nP -iTCP:"$1" >/dev/null 2>&1
+  }
+
+  stream_service_output() {
+    local service_name=$1
+    local output=$2
+    local line
+
+    while IFS= read -r line || [ -n "$line" ]; do
+      log_script "🪵 ($service_name) LOG $line"
+    done < "$output"
+  }
+
+  stop_services() {
+    local service_pid
+    local log_pid
+
+    if [ "${#SERVICE_PIDS[@]}" -gt 0 ]; then
+      log "🛑 Stopping services..."
+      for service_pid in "${SERVICE_PIDS[@]}"; do
+        kill -TERM "$service_pid" 2>/dev/null || true
+      done
+
+      # Give foreground service processes a moment to shut down cleanly.
+      sleep 1
+      for service_pid in "${SERVICE_PIDS[@]}"; do
+        if kill -0 "$service_pid" 2>/dev/null; then
+          log_warn "⚠️  Service process $service_pid did not stop gracefully; stopping it"
+          kill -KILL "$service_pid" 2>/dev/null || true
+        fi
+        wait "$service_pid" 2>/dev/null || true
+      done
+    fi
+
+    for log_pid in "${SERVICE_LOG_PIDS[@]}"; do
+      kill -TERM "$log_pid" 2>/dev/null || true
+      wait "$log_pid" 2>/dev/null || true
+    done
+    if [ -n "$SERVICE_LOG_DIR" ]; then
+      rm -rf "$SERVICE_LOG_DIR"
+    fi
+  }
+
   cleanup() {
-    local service_dir
-    local service_name
-    local service_cleanup
+    trap - EXIT INT TERM
+    set +e
 
     echo
+    stop_services
     log "🧹 Cleaning up services..."
 
     if [ -d "$SERVICES_DIR" ]; then
@@ -407,18 +507,28 @@ start() {
 
     log "🔙 Restoring previous settings..."
 
-    sudo systemsetup -setremotelogin "$OLD_REMOTE_LOGIN" >/dev/null
-    sudo pmset -a disablesleep "$OLD_DISABLE_SLEEP"
+    if ! sudo systemsetup -setremotelogin "$OLD_REMOTE_LOGIN" >/dev/null; then
+      log_error "😵 Failed to restore Remote Login"
+    fi
+    if ! sudo pmset -a disablesleep "$OLD_DISABLE_SLEEP"; then
+      log_error "😵 Failed to restore sleep settings"
+    fi
 
     if [ "$OLD_TAILSCALE_RUNNING" -eq 1 ]; then
-      tailscale up
+      if ! tailscale up; then
+        log_error "😵 Failed to restore Tailscale"
+      fi
     else
-      tailscale down
+      if ! tailscale down; then
+        log_error "😵 Failed to restore Tailscale"
+      fi
     fi
   }
 
   trap cleanup EXIT
   trap 'exit 0' INT TERM
+
+  SERVICE_LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/macaron.XXXXXX")
 
   sudo systemsetup -setremotelogin on >/dev/null
   log_success "✅ Remote Login enabled"
@@ -430,37 +540,61 @@ start() {
   echo
   log "🙈 Environment ready; loading services..."
 
-  TAILSCALE_IP=$(tailscale ip -4 | head -n 1)
-  PORT=49001
-  LOGS=""
-  FOUND_SERVICES=0
+  tailscale_ip=$(tailscale ip -4 | head -n 1)
+  port=49001
 
   if [ -d "$SERVICES_DIR" ]; then
-    for SERVICE_DIR in "$SERVICES_DIR"/*; do
-      [ -d "$SERVICE_DIR" ] || continue
-      SERVICE_START="$SERVICE_DIR/.macaron/start"
-      [ -f "$SERVICE_START" ] || continue
-      FOUND_SERVICES=1
+    for service_dir in "$SERVICES_DIR"/*; do
+      [ -d "$service_dir" ] || continue
+      service_start="$service_dir/.macaron/start"
+      [ -f "$service_start" ] || continue
+      found_services=1
 
-      SERVICE=$(basename "$SERVICE_DIR")
-      if MACARON_AVAILABLE_PORT="$PORT" run_check "$SERVICE_START" "$SERVICE · start"; then
-        log_success "✅ $SERVICE started"
-        LOGS="$LOGS   -> $SERVICE: http://$TAILSCALE_IP:$PORT\n"
-      else
-        log_error "😵 Failed to start $SERVICE"
-      fi
-      PORT=$((PORT + 1))
+      while ! port_is_available "$port"; do
+        port=$((port + 1))
+      done
+
+      service_name=$(basename "$service_dir")
+      service_log="$SERVICE_LOG_DIR/$service_name"
+      mkfifo "$service_log"
+      stream_service_output "$service_name" "$service_log" &
+      SERVICE_LOG_PIDS[${#SERVICE_LOG_PIDS[@]}]=$!
+      start_service "$service_start" "$port" > "$service_log" 2>&1 &
+      pid=$!
+      SERVICE_PIDS[${#SERVICE_PIDS[@]}]=$pid
+      SERVICE_NAMES[${#SERVICE_NAMES[@]}]=$service_name
+      SERVICE_PORTS[${#SERVICE_PORTS[@]}]=$port
+      port=$((port + 1))
     done
   fi
 
-  if [ "$FOUND_SERVICES" -eq 0 ]; then
+  # A foreground start script should remain running. Let immediately failing
+  # processes report their exit status before announcing successful startup.
+  sleep 1
+  for index in "${!SERVICE_PIDS[@]}"; do
+    pid=${SERVICE_PIDS[$index]}
+    service_name=${SERVICE_NAMES[$index]}
+    if ! kill -0 "$pid" 2>/dev/null; then
+      if wait "$pid"; then
+        log_error "😵 $service_name exited immediately; .macaron/start must keep the service in the foreground"
+      else
+        status=$?
+        log_error "😵 Failed to start $service_name (exit $status)"
+      fi
+    else
+      log_success "✅ $service_name started"
+      logs="$logs   -> $service_name: http://$tailscale_ip:${SERVICE_PORTS[$index]}\n"
+    fi
+  done
+
+  if [ "$found_services" -eq 0 ]; then
     log_warn "⚠️  No services found in $SERVICES_DIR"
   fi
 
   echo
   log_success "🏃 Macaron is running"
-  log "   → SSH: ssh $(whoami)@$TAILSCALE_IP"
-  printf '%b' "$WHITE$LOGS$RESET"
+  log "   → SSH: ssh $(whoami)@$tailscale_ip"
+  printf '%b' "$WHITE$logs$RESET"
 
   while true; do
     sleep 3600

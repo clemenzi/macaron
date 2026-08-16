@@ -11,15 +11,19 @@ service-name/
     └── start       # required
 ```
 
-Scripts can be executable files or Bash scripts run by Macaron.
+Scripts can be executable files or Bash scripts run by Macaron. Every script
+runs with the service repository root as its working directory.
 
 ## The `start` script
 
-Macaron looks for `.macaron/start` in every service and runs them in
-alphabetical order. Each service is assigned a port, starting at `49001`,
+Macaron looks for `.macaron/start` in every service and starts them in
+alphabetical order without waiting for one service to finish before launching
+the next. Each service is assigned a free TCP port, starting at `49001`,
 through the `MACARON_AVAILABLE_PORT` environment variable.
 
-The script must start the service on the assigned port. For example:
+The script must keep the service in the foreground; normally it should `exec`
+the server so Macaron can track it. Macaron owns that process and terminates it
+when Macaron stops. For example:
 
 ```bash
 #!/usr/bin/env bash
@@ -44,8 +48,9 @@ non-zero code when an error occurs.
 
 ## The `cleanup` script
 
-If present, `.macaron/cleanup` is run when `macaron` stops, before Macaron
-restores the previous system settings. Use it to stop processes or remove
-temporary resources created by the service. Cleanup scripts run for every
-installed service; a failing script is reported but does not prevent the other
-services or Macaron itself from being cleaned up.
+If present, `.macaron/cleanup` is run when `macaron` stops, after Macaron has
+terminated the service process and before it restores the previous system
+settings. Use it only for additional cleanup, such as removing temporary
+resources created by the service. Cleanup scripts run for every enabled
+service; a failing script is reported but does not prevent the other services
+or Macaron itself from being cleaned up.
