@@ -239,6 +239,12 @@ list() {
   done
 }
 
+self-update() {
+  sudo -v
+  echo "🔄 Downloading latest macaron installer..."
+  curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/install.sh | sudo bash
+}
+
 start() {
   sudo -v
 
@@ -346,6 +352,10 @@ case "$COMMAND" in
     ;;
   help|--help|-h)
     usage
+    ;;
+  self-update)
+    [ "$#" -eq 0 ] || { echo "Usage: macaron self-update" >&2; exit 2; }
+    self-update
     ;;
   *)
     echo "Unknown command: $COMMAND" >&2

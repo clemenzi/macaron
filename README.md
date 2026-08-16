@@ -51,6 +51,7 @@ macaron list                  # List installed services
 macaron update                # Update services
 macaron delete <service>      # Remove a service
 macaron doctor                # Check the configuration
+macaron self-update           # Update macaron itself
 ```
 
 For the complete documentation, see:

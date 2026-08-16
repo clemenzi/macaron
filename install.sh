@@ -2,9 +2,7 @@
 
 set -euo pipefail
 
-echo "Installing Macaron..."
-
-SOURCE_DIR="/tmp/macaron-source-$(date +%s)"
+echo "🔄 Downloading latest Macaron..."
 
 TARGET_USER="${SUDO_USER:-$USER}"
 if [ -n "${SUDO_USER:-}" ]; then
@@ -13,10 +11,9 @@ else
   TARGET_HOME="$HOME"
 fi
 
-git clone --depth 1 https://github.com/clemenzi/macaron.git "$SOURCE_DIR"
-cd "$SOURCE_DIR"
+CONTENT="$(curl -s "https://raw.githubusercontent.com/clemenzi/macaron/main/macaron")"
 
-cp macaron /usr/local/bin/
+echo "$CONTENT" > /usr/local/bin/macaron
 chmod +x /usr/local/bin/macaron
 
 mkdir -p "$TARGET_HOME/.config/macaron/services"
@@ -24,4 +21,4 @@ if [ -n "${SUDO_USER:-}" ]; then
   chown -R "$TARGET_USER" "$TARGET_HOME/.config/macaron"
 fi
 
-echo "Macaron installed successfully!"
+echo "✅ Macaron installed successfully!"

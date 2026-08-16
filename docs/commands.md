@@ -10,6 +10,7 @@ macaron update
 macaron delete <service>
 macaron list
 macaron help
+macaron self-update
 ```
 
 ## `install` options
