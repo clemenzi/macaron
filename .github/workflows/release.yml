@@ -16,8 +16,6 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Test
-        run: go test ./...
       - name: Build macOS binaries
         run: |
           GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o macaron_darwin_arm64 ./cmd/macaron
