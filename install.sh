@@ -30,10 +30,19 @@ else
   TARGET_HOME="$HOME"
 fi
 
+case "$(uname -m)" in
+  arm64) ARCH="arm64" ;;
+  x86_64) ARCH="amd64" ;;
+  *)
+    echo "Unsupported architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
 TEMP_FILE=$(mktemp)
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-curl -fsSL "https://raw.githubusercontent.com/clemenzi/macaron/main/macaron" -o "$TEMP_FILE"
+curl -fsSL "https://github.com/clemenzi/macaron/releases/latest/download/macaron_darwin_$ARCH" -o "$TEMP_FILE"
 install -m 755 "$TEMP_FILE" "$INSTALL_PATH"
 
 mkdir -p "$TARGET_HOME/.config/macaron/services" "$TARGET_HOME/.config/macaron/services-disabled"
