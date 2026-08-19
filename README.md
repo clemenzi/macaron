@@ -38,10 +38,10 @@ their previous state.
 ## Service management
 
 Macaron does not include any default services. You can install a service from a
-Git repository with:
+Git repository or a local directory with:
 
 ```sh
-macaron install <repository>
+macaron install <repository-or-directory>
 ```
 
 The most useful commands are:

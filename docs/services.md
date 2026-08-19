@@ -1,6 +1,6 @@
 # Service management
 
-Services are Git repositories installed by Macaron in:
+Services are directories installed by Macaron in:
 
 ```text
 ~/.config/macaron/services/
@@ -9,17 +9,19 @@ Services are Git repositories installed by Macaron in:
 ## Installing a service
 
 ```sh
-macaron install <repository>
+macaron install <source>
 ```
 
-`<repository>` can be a Git URL or any path supported by `git clone`. The
-directory name is derived from the repository. To set it manually:
+`<source>` can be a Git URL, any path supported by `git clone`, or a local
+directory. Local directories do not need to be Git repositories and are copied
+into Macaron's services directory, including hidden files. The directory name
+is derived from the source. To set it manually:
 
 ```sh
-macaron install --name <name> <repository>
+macaron install --name <name> <source>
 ```
 
-During installation, if the repository contains a `.macaron/build` script,
+During installation, if the source contains a `.macaron/build` script,
 Macaron asks for confirmation before running it.
 
 ## Updating, disabling, and removing services
@@ -32,8 +34,10 @@ macaron delete <service-name>
 macaron list
 ```
 
-After updating a service, Macaron automatically runs its `.macaron/build`
+After updating a Git service, Macaron automatically runs its `.macaron/build`
 script when present and reports this to the user. No confirmation is requested.
+Services installed from local directories that are not Git repositories are
+skipped by `macaron update`.
 
 `delete` takes the service directory name, not the repository URL.
 It removes either an enabled or disabled service. If a service with the same

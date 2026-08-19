@@ -90,7 +90,7 @@ usage() {
 Usage:
   macaron [start]                        | Start macaron
   macaron doctor                         | Check if everything is correctly configured and working
-  macaron install [options] <repository> | Install a service from a Git repository
+  macaron install [options] <source>     | Install a service from a Git repository or local directory
   macaron update                         | Update all services
   macaron disable <service>              | Disable a service
   macaron enable <service>               | Enable a service
@@ -103,11 +103,11 @@ EOF
 
 install_usage() {
   cat <<EOF
-Usage: macaron install [options] <repository>
+Usage: macaron install [options] <source>
 
 Options:
   --name <name>       Name of the service directory
-  --branch <branch>   Clone a specific branch
+  --branch <branch>   Clone a specific branch (Git repositories only)
   --skip-build        Do not run the service build script
   --skip-doctor       Do not run the service doctor
   -y, --yes           Automatically confirm the build script
@@ -171,7 +171,7 @@ doctor() {
 }
 
 install() {
-  local repo=""
+  local source=""
   local name=""
   local branch=""
   local skip_build=0
@@ -210,8 +210,8 @@ install() {
         ;;
       --)
         shift
-        [ "$#" -gt 0 ] || { echo "Missing repository" >&2; install_usage >&2; return 2; }
-        repo=$1
+        [ "$#" -gt 0 ] || { echo "Missing source" >&2; install_usage >&2; return 2; }
+        source=$1
         shift
         ;;
       -* )
@@ -220,21 +220,21 @@ install() {
         return 2
         ;;
       *)
-        [ -z "$repo" ] || { echo "Only one repository can be installed at a time" >&2; install_usage >&2; return 2; }
-        repo=$arg
+        [ -z "$source" ] || { echo "Only one source can be installed at a time" >&2; install_usage >&2; return 2; }
+        source=$arg
         shift
         ;;
     esac
   done
 
-  [ -n "$repo" ] || { echo "Missing repository" >&2; install_usage >&2; return 2; }
+  [ -n "$source" ] || { echo "Missing source" >&2; install_usage >&2; return 2; }
 
   if [ -z "$name" ]; then
-    name=$(basename "$repo")
+    name=$(basename "$source")
     name="${name%.git}"
   fi
 
-  log "📦 Installing from $repo..."
+  log "📦 Installing from $source..."
 
   # If NAME starts with macaron-service- , strip it off
   if [[ "$name" == macaron-service-* ]]; then
@@ -243,10 +243,21 @@ install() {
   fi
 
   mkdir -p "$SERVICES_DIR"
-  if [ -n "$branch" ]; then
-    git clone --quiet --branch "$branch" "$repo" "$SERVICES_DIR/$name"
+  if [ -e "$SERVICES_DIR/$name" ]; then
+    log_error "😵 Cannot install $name: a service with that name already exists"
+    return 1
+  fi
+
+  if [ -d "$source" ]; then
+    if [ -n "$branch" ]; then
+      log_error "😵 --branch cannot be used with a local directory"
+      return 2
+    fi
+    cp -R "$source" "$SERVICES_DIR/$name"
+  elif [ -n "$branch" ]; then
+    git clone --quiet --branch "$branch" "$source" "$SERVICES_DIR/$name"
   else
-    git clone --quiet "$repo" "$SERVICES_DIR/$name"
+    git clone --quiet "$source" "$SERVICES_DIR/$name"
   fi
 
   # If the service has a .macaron/build script, run it (after confirmation)
@@ -283,7 +294,7 @@ install() {
     log "ℹ️  Doctor skipped"
   fi
 
-  log_success "✅ Installed from $repo"
+  log_success "✅ Installed from $source"
 }
 
 delete() {
@@ -363,11 +374,14 @@ update() {
   log "🔄 Updating services..."
   for service_dir in "$SERVICES_DIR"/*; do
     if [ -d "$service_dir" ]; then
-      cd "$service_dir"
-      git pull --quiet
-
       service_name=$(basename "$service_dir")
-      log_success "✅ $service_name updated ($(git rev-parse --short HEAD))"
+      if ! git -C "$service_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        log "ℹ️  $service_name was installed from a local directory; update skipped"
+        continue
+      fi
+
+      git -C "$service_dir" pull --quiet
+      log_success "✅ $service_name updated ($(git -C "$service_dir" rev-parse --short HEAD))"
 
       build_script="$service_dir/.macaron/build"
       if [ -f "$build_script" ]; then
