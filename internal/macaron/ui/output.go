@@ -22,19 +22,19 @@ func New(out, errOut io.Writer) *Output {
 }
 
 func (o *Output) Info(format string, args ...any) {
-	o.print(o.out, "🔘 ", format, args...)
+	o.print(o.out, "ℹ️ ", format, args...)
 }
 
 func (o *Output) Success(format string, args ...any) {
-	o.print(o.out, "🟢 ", format, args...)
+	o.print(o.out, "✅ ", format, args...)
 }
 
 func (o *Output) Warning(format string, args ...any) {
-	o.print(o.out, "🟡  ", format, args...)
+	o.print(o.out, "⚠️  ", format, args...)
 }
 
 func (o *Output) Error(format string, args ...any) {
-	o.print(o.err, "🔴 ", format, args...)
+	o.print(o.err, "❌ ", format, args...)
 }
 
 func (o *Output) Section(icon, title string) {
