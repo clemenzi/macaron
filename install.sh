@@ -4,23 +4,14 @@ set -euo pipefail
 
 INSTALL_PATH="/usr/local/bin/macaron"
 
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  WHITE=$'\033[37m'
-  RESET=$'\033[0m'
-else
-  WHITE=""
-  RESET=""
-fi
-
-log() { printf '%s%s%s\n' "$WHITE" "$*" "$RESET"; }
-log_success() { log "$@"; }
+status() { printf '%s\n' "$*"; }
 
 if [ -e "$INSTALL_PATH" ]; then
   IS_UPDATE=true
-  log "🔄 Updating Macaron..."
+  status "🔄 Updating Macaron"
 else
   IS_UPDATE=false
-  log "🔄 Downloading latest Macaron..."
+  status "🔄 Downloading latest Macaron"
 fi
 
 TARGET_USER="${SUDO_USER:-$USER}"
@@ -30,10 +21,19 @@ else
   TARGET_HOME="$HOME"
 fi
 
+case "$(uname -m)" in
+  arm64) ARCH="arm64" ;;
+  x86_64) ARCH="amd64" ;;
+  *)
+    echo "Unsupported architecture: $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
 TEMP_FILE=$(mktemp)
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-curl -fsSL "https://raw.githubusercontent.com/clemenzi/macaron/main/macaron" -o "$TEMP_FILE"
+curl -fsSL "https://github.com/clemenzi/macaron/releases/latest/download/macaron_darwin_$ARCH" -o "$TEMP_FILE"
 install -m 755 "$TEMP_FILE" "$INSTALL_PATH"
 
 mkdir -p "$TARGET_HOME/.config/macaron/services" "$TARGET_HOME/.config/macaron/services-disabled"
@@ -42,7 +42,7 @@ if [ -n "${SUDO_USER:-}" ]; then
 fi
 
 if [ "$IS_UPDATE" = true ]; then
-  log_success "✅ Macaron updated successfully!"
+  status "✅ Macaron updated successfully"
 else
-  log_success "✅ Macaron installed successfully!"
+  status "✅ Macaron installed successfully"
 fi

@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build macOS binaries
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o macaron_darwin_arm64 ./cmd/macaron
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o macaron_darwin_amd64 ./cmd/macaron
+          sha256sum macaron_darwin_* > checksums.txt
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" macaron_darwin_arm64 macaron_darwin_amd64 checksums.txt --generate-notes --verify-tag

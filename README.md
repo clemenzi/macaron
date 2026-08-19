@@ -20,6 +20,24 @@ curl -L https://raw.githubusercontent.com/clemenzi/macaron/refs/heads/main/insta
 
 This installs `macaron` in `/usr/local/bin`.
 
+The installer selects the latest precompiled binary for Apple Silicon or Intel;
+Go is not required on the destination Mac.
+
+## Development
+
+Macaron uses the standard Go project layout: the executable entry point is in
+`cmd/macaron`, while implementation details live in `internal/macaron`.
+
+```sh
+go test -race ./...
+go build ./cmd/macaron
+```
+
+The CLI uses `urfave/cli/v3` for commands and options. Terminal output uses the
+Go standard library, with no additional presentation dependency. macOS tools
+(`systemsetup`, `pmset`, and `tailscale`) and Git remain external commands so
+existing services keep the same `.macaron` contract.
+
 ## Starting Macaron
 
 Start Macaron with:
