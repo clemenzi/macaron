@@ -1,15 +1,15 @@
-package macaron
+package service
 
 import "testing"
 
-func TestValidServiceName(t *testing.T) {
+func TestValidName(t *testing.T) {
 	for _, valid := range []string{"web", "my-service", "service.txt"} {
-		if !validServiceName(valid) {
+		if !ValidName(valid) {
 			t.Errorf("%q should be valid", valid)
 		}
 	}
 	for _, invalid := range []string{"", ".", "..", "../web", "a/b", `a\\b`} {
-		if validServiceName(invalid) {
+		if ValidName(invalid) {
 			t.Errorf("%q should be invalid", invalid)
 		}
 	}

@@ -2,35 +2,18 @@ package macaron
 
 import (
 	"bufio"
-	"bytes"
-	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
+
+	"github.com/clemenzi/macaron/internal/macaron/process"
+	"github.com/clemenzi/macaron/internal/macaron/ui"
 )
-
-func command(name string, args ...string) *exec.Cmd {
-	return exec.Command(name, args...)
-}
-
-func scriptCommand(script string) *exec.Cmd {
-	info, err := os.Stat(script)
-	if err == nil && info.Mode()&0o111 != 0 {
-		return command(script)
-	}
-	return command("bash", script)
-}
-
-func serviceRoot(script string) string {
-	return filepath.Dir(filepath.Dir(script))
-}
 
 func (a *app) runCheck(script, label string) error {
 	a.output.Info("Running %s", label)
-	cmd := scriptCommand(script)
-	cmd.Dir = serviceRoot(script)
+	cmd := process.Script(script)
+	cmd.Dir = process.ServiceRoot(script)
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		return err
@@ -60,7 +43,7 @@ func (a *app) runCheck(script, label string) error {
 	return err
 }
 
-func streamLimited(output *terminalOutput, r io.Reader, label string, limit int) int {
+func streamLimited(output *ui.Output, r io.Reader, label string, limit int) int {
 	reader := bufio.NewReader(r)
 	count := 0
 	for {
@@ -76,29 +59,4 @@ func streamLimited(output *terminalOutput, r io.Reader, label string, limit int)
 		}
 	}
 	return count
-}
-
-func runOutput(name string, args ...string) (string, error) {
-	cmd := command(name, args...)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
-	if err != nil {
-		message := strings.TrimSpace(out.String())
-		if message != "" {
-			return out.String(), fmt.Errorf("%s: %w", message, err)
-		}
-	}
-	return out.String(), err
-}
-
-func runQuietCheck(script string) error {
-	cmd := scriptCommand(script)
-	cmd.Dir = serviceRoot(script)
-	output, err := cmd.CombinedOutput()
-	if err != nil && strings.TrimSpace(string(output)) != "" {
-		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return err
 }

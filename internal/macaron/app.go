@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/clemenzi/macaron/internal/macaron/ui"
 	"github.com/urfave/cli/v3"
 )
 
@@ -21,7 +22,7 @@ type app struct {
 	services string
 	disabled string
 	active   string
-	output   *terminalOutput
+	output   *ui.Output
 	portFree func(int) bool
 }
 
@@ -66,7 +67,7 @@ func newApp(in io.Reader, out, errOut io.Writer) (*app, error) {
 		services: filepath.Join(config, "services"),
 		disabled: filepath.Join(config, "services-disabled"),
 		active:   filepath.Join(config, "active-services.json"),
-		output:   newTerminalOutput(out, errOut),
+		output:   ui.New(out, errOut),
 		portFree: portAvailable,
 	}, nil
 }

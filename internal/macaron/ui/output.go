@@ -1,4 +1,5 @@
-package macaron
+// Package ui formats Macaron's terminal output.
+package ui
 
 import (
 	"fmt"
@@ -7,38 +8,40 @@ import (
 	"sync"
 )
 
-type terminalOutput struct {
+// Output writes status and service messages to a terminal.
+type Output struct {
 	mu      sync.Mutex
 	out     io.Writer
 	err     io.Writer
 	useANSI bool
 }
 
-func newTerminalOutput(out, errOut io.Writer) *terminalOutput {
-	return &terminalOutput{out: out, err: errOut, useANSI: isTerminal(out) && os.Getenv("NO_COLOR") == ""}
+// New creates an Output for the provided stdout and stderr streams.
+func New(out, errOut io.Writer) *Output {
+	return &Output{out: out, err: errOut, useANSI: isTerminal(out) && os.Getenv("NO_COLOR") == ""}
 }
 
-func (o *terminalOutput) Info(format string, args ...any) {
+func (o *Output) Info(format string, args ...any) {
 	o.print(o.out, "🔘 ", format, args...)
 }
 
-func (o *terminalOutput) Success(format string, args ...any) {
+func (o *Output) Success(format string, args ...any) {
 	o.print(o.out, "🟢 ", format, args...)
 }
 
-func (o *terminalOutput) Warning(format string, args ...any) {
+func (o *Output) Warning(format string, args ...any) {
 	o.print(o.out, "🟡  ", format, args...)
 }
 
-func (o *terminalOutput) Error(format string, args ...any) {
+func (o *Output) Error(format string, args ...any) {
 	o.print(o.err, "🔴 ", format, args...)
 }
 
-func (o *terminalOutput) Section(icon, title string) {
+func (o *Output) Section(icon, title string) {
 	o.print(o.out, "\n"+icon+" ", "%s", title)
 }
 
-func (o *terminalOutput) Service(name, line string) {
+func (o *Output) Service(name, line string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.useANSI {
@@ -48,7 +51,7 @@ func (o *terminalOutput) Service(name, line string) {
 	fmt.Fprintf(o.out, "🪵 %s  %s\n", name, line)
 }
 
-func (o *terminalOutput) print(writer io.Writer, prefix, format string, args ...any) {
+func (o *Output) print(writer io.Writer, prefix, format string, args ...any) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	fmt.Fprint(writer, prefix)

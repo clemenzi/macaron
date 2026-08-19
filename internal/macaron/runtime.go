@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -17,6 +16,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/clemenzi/macaron/internal/macaron/process"
+	"github.com/clemenzi/macaron/internal/macaron/service"
+	"github.com/clemenzi/macaron/internal/macaron/ui"
 )
 
 type activeService struct {
@@ -34,7 +37,7 @@ type managedService struct {
 func (a *app) start() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := runAttached(a.in, a.out, a.err, "sudo", "-v"); err != nil {
+	if err := process.Attached(a.in, a.out, a.err, "sudo", "-v"); err != nil {
 		return err
 	}
 	state, err := a.readSystemState()
@@ -59,7 +62,7 @@ func (a *app) start() error {
 	}
 	a.output.Success("Environment ready")
 	a.output.Info("Loading services")
-	ip, err := runOutput("tailscale", "ip", "-4")
+	ip, err := process.Output("tailscale", "ip", "-4")
 	if err != nil {
 		return fmt.Errorf("get Tailscale IP: %w", err)
 	}
@@ -68,7 +71,7 @@ func (a *app) start() error {
 		return errors.New("Tailscale did not return an IPv4 address")
 	}
 
-	dirs, err := serviceDirs(a.services)
+	dirs, err := service.Dirs(a.services)
 	if err != nil {
 		return err
 	}
@@ -76,7 +79,7 @@ func (a *app) start() error {
 	found := false
 	for _, dir := range dirs {
 		script := filepath.Join(dir, ".macaron", "start")
-		if !regularFile(script) {
+		if !service.RegularFile(script) {
 			continue
 		}
 		found = true
@@ -125,8 +128,8 @@ func (a *app) start() error {
 }
 
 func (a *app) launchService(name, script string, port int) (*managedService, error) {
-	cmd := scriptCommand(script)
-	cmd.Dir = serviceRoot(script)
+	cmd := process.Script(script)
+	cmd.Dir = process.ServiceRoot(script)
 	cmd.Env = append(os.Environ(), "MACARON_AVAILABLE_PORT="+strconv.Itoa(port))
 	stdout := newLineWriter(a.output, name)
 	stderr := newLineWriter(a.output, name)
@@ -146,13 +149,13 @@ func (a *app) launchService(name, script string, port int) (*managedService, err
 }
 
 type lineWriter struct {
-	output  *terminalOutput
+	output  *ui.Output
 	name    string
 	mu      sync.Mutex
 	pending bytes.Buffer
 }
 
-func newLineWriter(output *terminalOutput, name string) *lineWriter {
+func newLineWriter(output *ui.Output, name string) *lineWriter {
 	return &lineWriter{output: output, name: name}
 }
 func (w *lineWriter) Write(p []byte) (int, error) {
@@ -220,14 +223,14 @@ func (a *app) stopServices(services []*managedService) {
 
 func (a *app) cleanupServices() {
 	a.output.Info("Cleaning up services")
-	dirs, err := serviceDirs(a.services)
+	dirs, err := service.Dirs(a.services)
 	if err != nil {
 		a.output.Error("Failed to list services: %v", err)
 		return
 	}
 	for _, dir := range dirs {
 		script := filepath.Join(dir, ".macaron", "cleanup")
-		if !regularFile(script) {
+		if !service.RegularFile(script) {
 			continue
 		}
 		name := filepath.Base(dir)
@@ -291,9 +294,4 @@ func currentUsername() string {
 		return user
 	}
 	return "user"
-}
-func runAttached(in io.Reader, out, errOut io.Writer, name string, args ...string) error {
-	cmd := command(name, args...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = in, out, errOut
-	return cmd.Run()
 }

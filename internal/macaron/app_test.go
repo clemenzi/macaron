@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -14,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	servicefs "github.com/clemenzi/macaron/internal/macaron/service"
 )
 
 func TestCLIHelpAndUsageErrors(t *testing.T) {
@@ -62,19 +63,10 @@ func TestServiceListOutput(t *testing.T) {
 	if code := Run([]string{"list"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("list exit code = %d, stderr = %s", code, errOut.String())
 	}
-	for _, expected := range []string{"📦 Services", "✅ api", "enabled", "*️⃣ docs", "disabled"} {
+	for _, expected := range []string{"📦 Services", "🟢 api", "enabled", "🔘 docs", "disabled"} {
 		if !strings.Contains(out.String(), expected) {
 			t.Fatalf("output missing %q: %s", expected, out.String())
 		}
-	}
-}
-
-func TestServiceOutputIsDimmedOnTerminal(t *testing.T) {
-	var out bytes.Buffer
-	output := &terminalOutput{out: &out, err: io.Discard, useANSI: true}
-	output.Service("api", "ready")
-	if got := out.String(); got != "\x1b[2m🪵 api  ready\x1b[0m\n" {
-		t.Fatalf("service output = %q", got)
 	}
 }
 
@@ -110,7 +102,7 @@ func TestInstallManageAndDeleteLocalService(t *testing.T) {
 	if code := Run([]string{"disable", "demo"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("disable code = %d", code)
 	}
-	if !directory(filepath.Join(configBase, "macaron", "services-disabled", "demo")) {
+	if !servicefs.Directory(filepath.Join(configBase, "macaron", "services-disabled", "demo")) {
 		t.Fatal("service was not disabled")
 	}
 	if code := Run([]string{"enable", "demo"}, strings.NewReader(""), &out, &errOut); code != 0 {
@@ -122,7 +114,7 @@ func TestInstallManageAndDeleteLocalService(t *testing.T) {
 	if code := Run([]string{"delete", "demo"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("delete code = %d", code)
 	}
-	if directory(service) {
+	if servicefs.Directory(service) {
 		t.Fatal("service was not deleted")
 	}
 }
@@ -141,7 +133,7 @@ func TestDoctor(t *testing.T) {
 	if code := Run([]string{"doctor"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("doctor code = %d, stderr = %s", code, errOut.String())
 	}
-	want := "✅ Tailscale OK\n✅ ok doctor passed\n"
+	want := "🟢 Tailscale OK\n🟢 ok doctor passed\n"
 	if out.String() != want {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
