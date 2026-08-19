@@ -1,11 +1,14 @@
 package macaron
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/urfave/cli/v3"
 )
 
 const maxOutputLines = 4
@@ -18,22 +21,9 @@ type app struct {
 	services string
 	disabled string
 	active   string
-	log      *logger
+	output   *terminalOutput
 	portFree func(int) bool
 }
-
-type exitError struct {
-	code int
-	err  error
-}
-
-func (e *exitError) Error() string {
-	if e.err == nil {
-		return ""
-	}
-	return e.err.Error()
-}
-func (e *exitError) Unwrap() error { return e.err }
 
 // Run executes Macaron and returns a process exit code.
 func Run(args []string, in io.Reader, out, errOut io.Writer) int {
@@ -47,14 +37,14 @@ func Run(args []string, in io.Reader, out, errOut io.Writer) int {
 	if err == nil {
 		return 0
 	}
-	var exit *exitError
+	var exit cli.ExitCoder
 	if errors.As(err, &exit) {
-		if exit.err != nil {
-			fmt.Fprintln(errOut, exit.err)
+		if exit.Error() != "" {
+			a.output.Error("%s", exit.Error())
 		}
-		return exit.code
+		return exit.ExitCode()
 	}
-	fmt.Fprintln(errOut, err)
+	a.output.Error("Command failed: %v", err)
 	return 1
 }
 
@@ -76,87 +66,138 @@ func newApp(in io.Reader, out, errOut io.Writer) (*app, error) {
 		services: filepath.Join(config, "services"),
 		disabled: filepath.Join(config, "services-disabled"),
 		active:   filepath.Join(config, "active-services.json"),
-		log:      newLogger(out, errOut),
+		output:   newTerminalOutput(out, errOut),
 		portFree: portAvailable,
 	}, nil
 }
 
 func (a *app) run(args []string) error {
-	command := "start"
-	if len(args) > 0 {
-		command, args = args[0], args[1:]
-	}
-
-	switch command {
-	case "start":
-		if len(args) != 0 {
-			return usageError("Usage: macaron start")
-		}
-		return a.start()
-	case "doctor":
-		if len(args) != 0 {
-			return usageError("Usage: macaron doctor")
-		}
-		return a.doctor()
-	case "install":
-		return a.install(args)
-	case "update":
-		if len(args) != 0 {
-			return usageError("Usage: macaron update")
-		}
-		return a.update()
-	case "disable":
-		return a.moveService(args, false)
-	case "enable":
-		return a.moveService(args, true)
-	case "delete":
-		return a.delete(args)
-	case "list":
-		if len(args) != 0 {
-			return usageError("Usage: macaron list")
-		}
-		return a.list()
-	case "self-update":
-		if len(args) != 0 {
-			return usageError("Usage: macaron self-update")
-		}
-		return a.selfUpdate()
-	case "help", "--help", "-h":
-		if len(args) != 0 {
-			return usageError("Usage: macaron help")
-		}
-		fmt.Fprint(a.out, usage)
-		return nil
-	default:
-		fmt.Fprintf(a.err, "Unknown command: %s\n%s", command, usage)
-		return &exitError{code: 2}
-	}
+	return a.cli().Run(context.Background(), append([]string{"macaron"}, args...))
 }
 
 func usageError(message string) error {
-	return &exitError{code: 2, err: errors.New(message)}
+	return cli.Exit(message, 2)
 }
 
-const usage = `Usage:
-  macaron [start]                        | Start macaron
-  macaron doctor                         | Check if everything is correctly configured and working
-  macaron install [options] <source>     | Install a service from a Git repository or local directory
-  macaron update                         | Update all services
-  macaron disable <service>              | Disable a service
-  macaron enable <service>               | Enable a service
-  macaron delete <service>               | Delete a service
-  macaron list                           | List all services
-  macaron help                           | Show this help
-  macaron self-update                    | Update macaron to the latest version
-`
+func (a *app) cli() *cli.Command {
+	noArgs := func(usage string, action func() error) cli.ActionFunc {
+		return func(_ context.Context, cmd *cli.Command) error {
+			if cmd.Args().Len() != 0 {
+				return usageError(usage)
+			}
+			return action()
+		}
+	}
+	oneService := func(verb string, action func([]string) error) cli.ActionFunc {
+		return func(_ context.Context, cmd *cli.Command) error {
+			if cmd.Args().Len() != 1 {
+				return usageError("Usage: macaron " + verb + " <service>")
+			}
+			return action(cmd.Args().Slice())
+		}
+	}
 
-const installUsage = `Usage: macaron install [options] <source>
+	root := &cli.Command{
+		Name:                   "macaron",
+		Usage:                  "Turn your Mac into a remotely accessible workstation",
+		Reader:                 a.in,
+		Writer:                 a.out,
+		ErrWriter:              a.err,
+		HideVersion:            true,
+		UseShortOptionHandling: true,
+		ExitErrHandler:         func(context.Context, *cli.Command, error) {},
+		OnUsageError:           usageErrorHandler,
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			if cmd.Args().Len() == 0 {
+				return a.start()
+			}
+			return cli.Exit("Unknown command: "+cmd.Args().First(), 2)
+		},
+	}
+	root.Commands = []*cli.Command{
+		{
+			Name:   "start",
+			Usage:  "Start macaron",
+			Action: noArgs("Usage: macaron start", a.start),
+		},
+		{
+			Name:   "doctor",
+			Usage:  "Check the configuration and services",
+			Action: noArgs("Usage: macaron doctor", a.doctor),
+		},
+		{
+			Name:      "install",
+			Usage:     "Install a service from a Git repository or local directory",
+			ArgsUsage: "<source>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "name", Usage: "Name of the service directory"},
+				&cli.StringFlag{Name: "branch", Usage: "Clone a specific branch"},
+				&cli.BoolFlag{Name: "skip-build", Usage: "Do not run the service build script"},
+				&cli.BoolFlag{Name: "skip-doctor", Usage: "Do not run the service doctor"},
+				&cli.BoolFlag{
+					Name:    "yes",
+					Aliases: []string{"y"},
+					Usage:   "Automatically confirm the build script",
+				},
+			},
+			Action: func(_ context.Context, cmd *cli.Command) error {
+				if cmd.Args().Len() != 1 {
+					return usageError("Usage: macaron install [options] <source>")
+				}
+				return a.install(installOptions{
+					source:     cmd.Args().First(),
+					name:       cmd.String("name"),
+					branch:     cmd.String("branch"),
+					skipBuild:  cmd.Bool("skip-build"),
+					skipDoctor: cmd.Bool("skip-doctor"),
+					yes:        cmd.Bool("yes"),
+				})
+			},
+		},
+		{
+			Name:   "update",
+			Usage:  "Update all services",
+			Action: noArgs("Usage: macaron update", a.update),
+		},
+		{
+			Name:      "disable",
+			Usage:     "Disable a service",
+			ArgsUsage: "<service>",
+			Action: oneService("disable", func(args []string) error {
+				return a.moveService(args, false)
+			}),
+		},
+		{
+			Name:      "enable",
+			Usage:     "Enable a service",
+			ArgsUsage: "<service>",
+			Action: oneService("enable", func(args []string) error {
+				return a.moveService(args, true)
+			}),
+		},
+		{
+			Name:      "delete",
+			Usage:     "Delete a service",
+			ArgsUsage: "<service>",
+			Action:    oneService("delete", a.delete),
+		},
+		{
+			Name:   "list",
+			Usage:  "List all services",
+			Action: noArgs("Usage: macaron list", a.list),
+		},
+		{
+			Name:   "self-update",
+			Usage:  "Update macaron to the latest version",
+			Action: noArgs("Usage: macaron self-update", a.selfUpdate),
+		},
+	}
+	for _, command := range root.Commands {
+		command.OnUsageError = usageErrorHandler
+	}
+	return root
+}
 
-Options:
-  --name <name>       Name of the service directory
-  --branch <branch>   Clone a specific branch (Git repositories only)
-  --skip-build        Do not run the service build script
-  --skip-doctor       Do not run the service doctor
-  -y, --yes           Automatically confirm the build script
-  -h, --help          Show this help
-`
+func usageErrorHandler(_ context.Context, _ *cli.Command, err error, _ bool) error {
+	return cli.Exit(err, 2)
+}

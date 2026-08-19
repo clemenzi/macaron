@@ -7,40 +7,60 @@ import (
 	"sync"
 )
 
-type logger struct {
-	out, err   io.Writer
-	white, dim string
-	dimItalic  string
-	reset      string
-	mu         sync.Mutex
+type terminalOutput struct {
+	mu      sync.Mutex
+	out     io.Writer
+	err     io.Writer
+	useANSI bool
 }
 
-func newLogger(out, errOut io.Writer) *logger {
-	l := &logger{out: out, err: errOut}
-	file, ok := out.(*os.File)
-	if !ok || os.Getenv("NO_COLOR") != "" {
-		return l
+func newTerminalOutput(out, errOut io.Writer) *terminalOutput {
+	return &terminalOutput{out: out, err: errOut, useANSI: isTerminal(out) && os.Getenv("NO_COLOR") == ""}
+}
+
+func (o *terminalOutput) Info(format string, args ...any) {
+	o.print(o.out, "🔘 ", format, args...)
+}
+
+func (o *terminalOutput) Success(format string, args ...any) {
+	o.print(o.out, "🟢 ", format, args...)
+}
+
+func (o *terminalOutput) Warning(format string, args ...any) {
+	o.print(o.out, "🟡  ", format, args...)
+}
+
+func (o *terminalOutput) Error(format string, args ...any) {
+	o.print(o.err, "🔴 ", format, args...)
+}
+
+func (o *terminalOutput) Section(icon, title string) {
+	o.print(o.out, "\n"+icon+" ", "%s", title)
+}
+
+func (o *terminalOutput) Service(name, line string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.useANSI {
+		fmt.Fprintf(o.out, "\033[2m🪵 %s  %s\033[0m\n", name, line)
+		return
+	}
+	fmt.Fprintf(o.out, "🪵 %s  %s\n", name, line)
+}
+
+func (o *terminalOutput) print(writer io.Writer, prefix, format string, args ...any) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	fmt.Fprint(writer, prefix)
+	fmt.Fprintf(writer, format, args...)
+	fmt.Fprintln(writer)
+}
+
+func isTerminal(writer io.Writer) bool {
+	file, ok := writer.(*os.File)
+	if !ok {
+		return false
 	}
 	info, err := file.Stat()
-	if err == nil && info.Mode()&os.ModeCharDevice != 0 {
-		l.white = "\x1b[37m"
-		l.dim = "\x1b[2;90m"
-		l.dimItalic = "\x1b[2;3;90m"
-		l.reset = "\x1b[0m"
-	}
-	return l
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
-
-func (l *logger) line(w io.Writer, color, format string, args ...any) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	fmt.Fprint(w, color)
-	fmt.Fprintf(w, format, args...)
-	fmt.Fprintln(w, l.reset)
-}
-
-func (l *logger) info(format string, args ...any)   { l.line(l.out, l.white, format, args...) }
-func (l *logger) warn(format string, args ...any)   { l.info(format, args...) }
-func (l *logger) error(format string, args ...any)  { l.line(l.err, l.white, format, args...) }
-func (l *logger) script(format string, args ...any) { l.line(l.out, l.dim, format, args...) }
-func (l *logger) empty(format string, args ...any)  { l.line(l.out, l.dimItalic, format, args...) }

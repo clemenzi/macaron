@@ -11,7 +11,7 @@ func (a *app) selfUpdate() error {
 	if err := runAttached(a.in, a.out, a.err, "sudo", "-v"); err != nil {
 		return err
 	}
-	a.log.info("🔄 Downloading latest macaron installer...")
+	a.output.Info("Downloading latest Macaron installer")
 	file, err := os.CreateTemp("", "macaron-install-*.sh")
 	if err != nil {
 		return err
@@ -27,5 +27,6 @@ func (a *app) selfUpdate() error {
 	if err := runAttached(a.in, a.out, a.err, "sudo", "bash", path); err != nil {
 		return fmt.Errorf("run installer: %w", err)
 	}
+	a.output.Success("Macaron updated")
 	return nil
 }

@@ -28,7 +28,7 @@ func serviceRoot(script string) string {
 }
 
 func (a *app) runCheck(script, label string) error {
-	a.log.script("╭─ %s logs", label)
+	a.output.Info("Running %s", label)
 	cmd := scriptCommand(script)
 	cmd.Dir = serviceRoot(script)
 	reader, writer, err := os.Pipe()
@@ -47,16 +47,20 @@ func (a *app) runCheck(script, label string) error {
 		done <- cmd.Wait()
 		writer.Close()
 	}()
-	lines := streamLimited(a.log, reader, maxOutputLines)
+	lines := streamLimited(a.output, reader, label, maxOutputLines)
 	err = <-done
 	if lines == 0 {
-		a.log.empty("│ no output from script")
+		a.output.Info("%s produced no output", label)
 	}
-	a.log.script("╰─ logs end")
+	if err != nil {
+		a.output.Error("%s failed: %v", label, err)
+	} else {
+		a.output.Success("%s completed", label)
+	}
 	return err
 }
 
-func streamLimited(log *logger, r io.Reader, limit int) int {
+func streamLimited(output *terminalOutput, r io.Reader, label string, limit int) int {
 	reader := bufio.NewReader(r)
 	count := 0
 	for {
@@ -64,7 +68,7 @@ func streamLimited(log *logger, r io.Reader, limit int) int {
 		if len(line) > 0 {
 			count++
 			if count <= limit {
-				log.script("│ %s", strings.TrimSuffix(line, "\n"))
+				output.Service(label, strings.TrimSuffix(line, "\n"))
 			}
 		}
 		if err != nil {
@@ -87,4 +91,14 @@ func runOutput(name string, args ...string) (string, error) {
 		}
 	}
 	return out.String(), err
+}
+
+func runQuietCheck(script string) error {
+	cmd := scriptCommand(script)
+	cmd.Dir = serviceRoot(script)
+	output, err := cmd.CombinedOutput()
+	if err != nil && strings.TrimSpace(string(output)) != "" {
+		return fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return err
 }

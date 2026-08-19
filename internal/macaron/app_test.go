@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -21,7 +22,7 @@ func TestCLIHelpAndUsageErrors(t *testing.T) {
 	if code := Run([]string{"help"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("help exit code = %d, stderr = %s", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "macaron install") {
+	if !strings.Contains(out.String(), "install") {
 		t.Fatalf("help missing install command: %s", out.String())
 	}
 	out.Reset()
@@ -36,6 +37,44 @@ func TestCLIHelpAndUsageErrors(t *testing.T) {
 	errOut.Reset()
 	if code := Run([]string{"doctor", "extra"}, strings.NewReader(""), &out, &errOut); code != 2 {
 		t.Fatalf("invalid doctor exit code = %d", code)
+	}
+	for _, args := range [][]string{
+		{"install"},
+		{"install", "one", "two"},
+		{"install", "--name"},
+		{"install", "--unknown", "source"},
+	} {
+		out.Reset()
+		errOut.Reset()
+		if code := Run(args, strings.NewReader(""), &out, &errOut); code != 2 {
+			t.Errorf("Run(%q) exit code = %d, stderr = %s", args, code, errOut.String())
+		}
+	}
+}
+
+func TestServiceListOutput(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", base)
+	t.Setenv("NO_COLOR", "1")
+	mustMkdir(t, filepath.Join(base, "macaron", "services", "api"))
+	mustMkdir(t, filepath.Join(base, "macaron", "services-disabled", "docs"))
+	var out, errOut bytes.Buffer
+	if code := Run([]string{"list"}, strings.NewReader(""), &out, &errOut); code != 0 {
+		t.Fatalf("list exit code = %d, stderr = %s", code, errOut.String())
+	}
+	for _, expected := range []string{"📦 Services", "✅ api", "enabled", "*️⃣ docs", "disabled"} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output missing %q: %s", expected, out.String())
+		}
+	}
+}
+
+func TestServiceOutputIsDimmedOnTerminal(t *testing.T) {
+	var out bytes.Buffer
+	output := &terminalOutput{out: &out, err: io.Discard, useANSI: true}
+	output.Service("api", "ready")
+	if got := out.String(); got != "\x1b[2m🪵 api  ready\x1b[0m\n" {
+		t.Fatalf("service output = %q", got)
 	}
 }
 
@@ -64,7 +103,7 @@ func TestInstallManageAndDeleteLocalService(t *testing.T) {
 	if strings.TrimSpace(string(workingDir)) != service {
 		t.Fatalf("build cwd = %q, want %q", workingDir, service)
 	}
-	if strings.Contains(out.String(), "│ five") {
+	if strings.Contains(out.String(), "five") {
 		t.Fatalf("script output was not limited: %s", out.String())
 	}
 
@@ -77,7 +116,7 @@ func TestInstallManageAndDeleteLocalService(t *testing.T) {
 	if code := Run([]string{"enable", "demo"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("enable code = %d", code)
 	}
-	if code := Run([]string{"list"}, strings.NewReader(""), &out, &errOut); code != 0 || !strings.Contains(out.String(), "   - demo") {
+	if code := Run([]string{"list"}, strings.NewReader(""), &out, &errOut); code != 0 || !strings.Contains(out.String(), "demo") {
 		t.Fatalf("list failed: code %d, %s", code, out.String())
 	}
 	if code := Run([]string{"delete", "demo"}, strings.NewReader(""), &out, &errOut); code != 0 {
@@ -102,7 +141,8 @@ func TestDoctor(t *testing.T) {
 	if code := Run([]string{"doctor"}, strings.NewReader(""), &out, &errOut); code != 0 {
 		t.Fatalf("doctor code = %d, stderr = %s", code, errOut.String())
 	}
-	if !strings.Contains(out.String(), "✅ Doctor: all checks passed") {
+	want := "✅ Tailscale OK\n✅ ok doctor passed\n"
+	if out.String() != want {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
 }

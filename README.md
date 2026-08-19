@@ -33,9 +33,10 @@ go test -race ./...
 go build ./cmd/macaron
 ```
 
-The core uses only the Go standard library. macOS tools (`systemsetup`, `pmset`,
-and `tailscale`) and Git remain external commands so existing services keep the
-same `.macaron` contract.
+The CLI uses `urfave/cli/v3` for commands and options. Terminal output uses the
+Go standard library, with no additional presentation dependency. macOS tools
+(`systemsetup`, `pmset`, and `tailscale`) and Git remain external commands so
+existing services keep the same `.macaron` contract.
 
 ## Starting Macaron
 

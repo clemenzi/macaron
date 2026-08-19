@@ -38,35 +38,35 @@ func (a *app) prepareSystem() error {
 	if err := command("sudo", "systemsetup", "-setremotelogin", "on").Run(); err != nil {
 		return fmt.Errorf("enable Remote Login: %w", err)
 	}
-	a.log.info("✅ Remote Login enabled")
+	a.output.Success("Remote Login enabled")
 	if err := runAttached(a.in, a.out, a.err, "sudo", "pmset", "-a", "disablesleep", "1"); err != nil {
 		return fmt.Errorf("disable sleep: %w", err)
 	}
-	a.log.info("✅ Sleep disabled")
+	a.output.Success("Sleep disabled")
 	if err := runAttached(a.in, a.out, a.err, "tailscale", "up"); err != nil {
 		return fmt.Errorf("start Tailscale: %w", err)
 	}
-	a.log.info("✅ Tailscale started")
+	a.output.Success("Tailscale started")
 	return nil
 }
 
 func (a *app) restoreSystemState(state systemState) {
-	a.log.info("🔙 Restoring previous settings...")
+	a.output.Info("Restoring previous system settings")
 	if err := command("sudo", "systemsetup", "-setremotelogin", state.remoteLogin).Run(); err != nil {
-		a.log.error("😵 Failed to restore Remote Login")
+		a.output.Error("Failed to restore Remote Login: %v", err)
 	}
 	sleep := "0"
 	if state.sleepDisabled {
 		sleep = "1"
 	}
 	if err := runAttached(a.in, a.out, a.err, "sudo", "pmset", "-a", "disablesleep", sleep); err != nil {
-		a.log.error("😵 Failed to restore sleep settings")
+		a.output.Error("Failed to restore sleep settings: %v", err)
 	}
 	tailscale := "down"
 	if state.tailscaleActive {
 		tailscale = "up"
 	}
 	if err := runAttached(a.in, a.out, a.err, "tailscale", tailscale); err != nil {
-		a.log.error("😵 Failed to restore Tailscale")
+		a.output.Error("Failed to restore Tailscale: %v", err)
 	}
 }

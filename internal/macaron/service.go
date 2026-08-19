@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/urfave/cli/v3"
 	"io"
 	"io/fs"
 	"os"
@@ -20,29 +21,13 @@ type installOptions struct {
 	yes                   bool
 }
 
-func (a *app) install(args []string) error {
-	opts, help, err := parseInstall(args)
-	if help {
-		fmt.Fprint(a.out, installUsage)
-		return nil
-	}
-	if err != nil {
-		fmt.Fprintln(a.err, err)
-		fmt.Fprint(a.err, installUsage)
-		var exit *exitError
-		if errors.As(err, &exit) {
-			return &exitError{code: exit.code}
-		}
-		return err
-	}
-
+func (a *app) install(opts installOptions) error {
 	if opts.name == "" {
 		opts.name = strings.TrimSuffix(filepath.Base(filepath.Clean(opts.source)), ".git")
 	}
-	a.log.info("📦 Installing from %s...", opts.source)
+	a.output.Info("Installing service from %s", opts.source)
 	if strings.HasPrefix(opts.name, "macaron-service-") {
 		opts.name = strings.TrimPrefix(opts.name, "macaron-service-")
-		a.log.info("ℹ️  Stripped macaron-service- prefix from name")
 	}
 	if !validServiceName(opts.name) {
 		return usageError("Invalid service name: " + opts.name)
@@ -53,7 +38,7 @@ func (a *app) install(args []string) error {
 	}
 	destination := filepath.Join(a.services, opts.name)
 	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("😵 Cannot install %s: a service with that name already exists", opts.name)
+		return fmt.Errorf("cannot install %s: a service with that name already exists", opts.name)
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -61,7 +46,7 @@ func (a *app) install(args []string) error {
 	info, statErr := os.Stat(opts.source)
 	if statErr == nil && info.IsDir() {
 		if opts.branch != "" {
-			return usageError("😵 --branch cannot be used with a local directory")
+			return usageError("--branch cannot be used with a local directory")
 		}
 		if err := copyDir(opts.source, destination); err != nil {
 			return fmt.Errorf("copy service: %w", err)
@@ -81,87 +66,36 @@ func (a *app) install(args []string) error {
 
 	build := filepath.Join(destination, ".macaron", "build")
 	if opts.skipBuild {
-		a.log.info("ℹ️  Build skipped")
+		a.output.Info("Build skipped for %s", opts.name)
 	} else if regularFile(build) {
 		run := opts.yes
 		if !opts.yes {
-			fmt.Fprintf(a.out, "ℹ️  %s has a build script. Run it? [y/N] ", opts.name)
+			fmt.Fprintf(a.out, "%s has a build script. Run it? [y/N] ", opts.name)
 			answer, _ := bufio.NewReader(a.in).ReadString('\n')
 			run = strings.HasPrefix(strings.ToLower(strings.TrimSpace(answer)), "y")
 		}
 		if run {
-			a.log.info("🔨 Building %s...", opts.name)
+			a.output.Info("Building %s", opts.name)
 			if err := a.runCheck(build, opts.name+" · build"); err != nil {
 				return fmt.Errorf("build %s: %w", opts.name, err)
 			}
 		} else {
-			a.log.warn("⚠️  Build skipped; the service may not work correctly")
+			a.output.Warning("Build skipped for %s; the service may not work correctly", opts.name)
 		}
 	}
 
 	doctor := filepath.Join(destination, ".macaron", "doctor")
 	if opts.skipDoctor {
-		a.log.info("ℹ️  Doctor skipped")
+		a.output.Info("Doctor skipped for %s", opts.name)
 	} else if regularFile(doctor) {
 		if err := a.runCheck(doctor, opts.name+" · doctor"); err != nil {
-			a.log.error("😵 Doctor failed; run 'macaron doctor' for details")
+			a.output.Error("Doctor failed for %s; run 'macaron doctor' for details", opts.name)
 		} else {
-			a.log.info("✅ Doctor passed")
+			a.output.Success("Doctor passed for %s", opts.name)
 		}
 	}
-	a.log.info("✅ Installed from %s", opts.source)
+	a.output.Success("Service %s installed", opts.name)
 	return nil
-}
-
-func parseInstall(args []string) (installOptions, bool, error) {
-	var opts installOptions
-	for len(args) > 0 {
-		switch args[0] {
-		case "--name", "--branch":
-			flag := args[0]
-			if len(args) < 2 {
-				return opts, false, usageError("Missing value for " + flag)
-			}
-			if flag == "--name" {
-				opts.name = args[1]
-			} else {
-				opts.branch = args[1]
-			}
-			args = args[2:]
-		case "--skip-build":
-			opts.skipBuild = true
-			args = args[1:]
-		case "--skip-doctor":
-			opts.skipDoctor = true
-			args = args[1:]
-		case "-y", "--yes":
-			opts.yes = true
-			args = args[1:]
-		case "-h", "--help":
-			return opts, true, nil
-		case "--":
-			args = args[1:]
-			if len(args) == 0 {
-				return opts, false, usageError("Missing source")
-			}
-			if opts.source != "" || len(args) != 1 {
-				return opts, false, usageError("Only one source can be installed at a time")
-			}
-			opts.source, args = args[0], nil
-		default:
-			if strings.HasPrefix(args[0], "-") {
-				return opts, false, usageError("Unknown install option: " + args[0])
-			}
-			if opts.source != "" {
-				return opts, false, usageError("Only one source can be installed at a time")
-			}
-			opts.source, args = args[0], args[1:]
-		}
-	}
-	if opts.source == "" {
-		return opts, false, usageError("Missing source")
-	}
-	return opts, false, nil
 }
 
 func validServiceName(name string) bool {
@@ -184,11 +118,11 @@ func (a *app) moveService(args []string, enable bool) error {
 	}
 	source, destination := filepath.Join(from, name), filepath.Join(to, name)
 	if !directory(source) {
-		a.log.info("ℹ️  %s is not %s", name, state)
+		a.output.Info("Service %s is already %s", name, state)
 		return nil
 	}
 	if _, err := os.Lstat(destination); err == nil {
-		return fmt.Errorf("😵 Cannot %s %s: a %s service with that name already exists", verb, name, done)
+		return fmt.Errorf("cannot %s %s: a %s service with that name already exists", verb, name, done)
 	}
 	if err := os.MkdirAll(to, 0o755); err != nil {
 		return err
@@ -196,7 +130,7 @@ func (a *app) moveService(args []string, enable bool) error {
 	if err := os.Rename(source, destination); err != nil {
 		return err
 	}
-	a.log.info("✅ %s %sd", name, verb)
+	a.output.Success("Service %s is now %s", name, done)
 	return nil
 }
 
@@ -207,26 +141,26 @@ func (a *app) delete(args []string) error {
 	name := filepath.Base(args[0])
 	enabled, disabled := filepath.Join(a.services, name), filepath.Join(a.disabled, name)
 	if directory(enabled) && directory(disabled) {
-		return fmt.Errorf("😵 Cannot delete %s: it exists in both enabled and disabled services", name)
+		return fmt.Errorf("cannot delete %s: it exists in both enabled and disabled services", name)
 	}
-	a.log.info("🗑️  Deleting %s...", name)
+	a.output.Info("Deleting service %s", name)
 	target := enabled
 	if !directory(target) {
 		target = disabled
 	}
 	if !directory(target) {
-		a.log.info("ℹ️  %s is not installed", name)
+		a.output.Info("Service %s is not installed", name)
 		return nil
 	}
 	if err := os.RemoveAll(target); err != nil {
 		return err
 	}
-	a.log.info("✅ %s deleted", name)
+	a.output.Success("Service %s deleted", name)
 	return nil
 }
 
 func (a *app) update() error {
-	a.log.info("🔄 Updating services...")
+	a.output.Info("Updating services")
 	services, err := serviceDirs(a.services)
 	if err != nil {
 		return err
@@ -234,7 +168,7 @@ func (a *app) update() error {
 	for _, dir := range services {
 		name := filepath.Base(dir)
 		if cmd := command("git", "-C", dir, "rev-parse", "--is-inside-work-tree"); cmd.Run() != nil {
-			a.log.info("ℹ️  %s was installed from a local directory; update skipped", name)
+			a.output.Info("Skipping %s because its source is a local directory", name)
 			continue
 		}
 		cmd := command("git", "-C", dir, "pull", "--quiet")
@@ -246,27 +180,31 @@ func (a *app) update() error {
 		if err != nil {
 			return fmt.Errorf("read %s revision: %w", name, err)
 		}
-		a.log.info("✅ %s updated (%s)", name, strings.TrimSpace(revision))
+		a.output.Success("Service %s updated to %s", name, strings.TrimSpace(revision))
 		build := filepath.Join(dir, ".macaron", "build")
 		if regularFile(build) {
-			a.log.info("🔨 Building %s...", name)
+			a.output.Info("Building %s", name)
 			if err := a.runCheck(build, name+" · build"); err != nil {
 				return fmt.Errorf("build %s: %w", name, err)
 			}
 		}
 	}
-	a.log.info("✅ Update complete")
+	a.output.Success("Updated %d services", len(services))
 	return nil
 }
 
 func (a *app) list() error {
-	a.log.info("ℹ️  Installed services:")
-	for _, dir := range mustServiceDirs(a.services) {
-		a.log.info("   - %s", filepath.Base(dir))
+	enabled := mustServiceDirs(a.services)
+	disabled := mustServiceDirs(a.disabled)
+	a.output.Section("📦", "Services")
+	for _, dir := range enabled {
+		a.output.Success("%s  enabled", filepath.Base(dir))
 	}
-	a.log.info("ℹ️  Disabled services:")
-	for _, dir := range mustServiceDirs(a.disabled) {
-		a.log.info("   - %s", filepath.Base(dir))
+	for _, dir := range disabled {
+		a.output.Info("%s  disabled", filepath.Base(dir))
+	}
+	if len(enabled)+len(disabled) == 0 {
+		a.output.Info("No services installed")
 	}
 	return nil
 }
@@ -275,27 +213,25 @@ func (a *app) doctor() error {
 	failed := false
 	path, err := exec.LookPath("tailscale")
 	if err != nil {
-		a.log.error("😵 Tailscale: not installed or not on PATH")
+		a.output.Error("Tailscale is not installed or not on PATH")
 		failed = true
 	} else {
 		output, err := runOutput(path, "status", "--json")
 		if err != nil {
-			a.log.error("😵 Tailscale: unable to determine login status")
+			a.output.Error("Unable to determine Tailscale login status: %v", err)
 			failed = true
 		} else {
 			var status struct {
 				BackendState string `json:"BackendState"`
 			}
 			if json.Unmarshal([]byte(output), &status) == nil && status.BackendState == "NeedsLogin" {
-				a.log.error("😵 Tailscale: not logged in")
+				a.output.Error("Tailscale is not logged in")
 				failed = true
 			} else {
-				a.log.info("✅ Tailscale: logged in")
+				a.output.Success("Tailscale OK")
 			}
 		}
 	}
-	fmt.Fprintln(a.out)
-	a.log.info("🔍 Checking services...")
 	services, err := serviceDirs(a.services)
 	if err != nil {
 		return err
@@ -308,24 +244,21 @@ func (a *app) doctor() error {
 		}
 		found = true
 		name := filepath.Base(dir)
-		if err := a.runCheck(check, name+" · doctor"); err != nil {
-			a.log.error("  - %s: not ok", name)
+		if err := runQuietCheck(check); err != nil {
+			a.output.Error("%s doctor failed: %v", name, err)
 			failed = true
 		} else {
-			a.log.info("  - %s: ok", name)
+			a.output.Success("%s doctor passed", name)
 		}
 	}
 	if len(services) == 0 {
-		a.log.info("  - no services configured (%s)", a.services)
+		a.output.Info("No services configured in %s", a.services)
 	} else if !found {
-		a.log.info("  - no service checks found")
+		a.output.Info("No service doctor checks found")
 	}
-	fmt.Fprintln(a.out)
 	if failed {
-		a.log.error("😵 Doctor: one or more checks failed")
-		return &exitError{code: 1}
+		return cli.Exit("", 1)
 	}
-	a.log.info("✅ Doctor: all checks passed")
 	return nil
 }
 

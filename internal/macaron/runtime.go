@@ -43,11 +43,10 @@ func (a *app) start() error {
 	}
 	var services []*managedService
 	defer func() {
-		fmt.Fprintln(a.out)
 		a.stopServices(services)
 		a.cleanupServices()
 		if err := os.Remove(a.active); err != nil && !errors.Is(err, os.ErrNotExist) {
-			a.log.error("😵 Failed to remove active services file: %v", err)
+			a.output.Error("Failed to remove %s: %v", a.active, err)
 		}
 		a.restoreSystemState(state)
 	}()
@@ -58,8 +57,8 @@ func (a *app) start() error {
 	if err := a.prepareSystem(); err != nil {
 		return err
 	}
-	fmt.Fprintln(a.out)
-	a.log.info("🙈 Environment ready; loading services...")
+	a.output.Success("Environment ready")
+	a.output.Info("Loading services")
 	ip, err := runOutput("tailscale", "ip", "-4")
 	if err != nil {
 		return fmt.Errorf("get Tailscale IP: %w", err)
@@ -86,7 +85,7 @@ func (a *app) start() error {
 		}
 		service, err := a.launchService(filepath.Base(dir), script, port)
 		if err != nil {
-			a.log.error("😵 Failed to start %s: %v", filepath.Base(dir), err)
+			a.output.Error("Failed to start %s: %v", filepath.Base(dir), err)
 			port++
 			continue
 		}
@@ -100,12 +99,12 @@ func (a *app) start() error {
 		select {
 		case <-service.done:
 			if service.waitErr == nil {
-				a.log.error("😵 %s exited immediately; .macaron/start must keep the service in the foreground", service.Name)
+				a.output.Error("%s exited immediately; .macaron/start must stay in the foreground", service.Name)
 			} else {
-				a.log.error("😵 Failed to start %s (%s)", service.Name, exitDescription(service.waitErr))
+				a.output.Error("%s failed during startup: %s", service.Name, exitDescription(service.waitErr))
 			}
 		default:
-			a.log.info("✅ %s started", service.Name)
+			a.output.Success("%s started on port %d", service.Name, service.Port)
 			active = append(active, service.activeService)
 		}
 	}
@@ -113,13 +112,12 @@ func (a *app) start() error {
 		return err
 	}
 	if !found {
-		a.log.warn("⚠️  No services found in %s", a.services)
+		a.output.Warning("No services found in %s", a.services)
 	}
-	fmt.Fprintln(a.out)
-	a.log.info("🏃 Macaron is running")
-	a.log.info("   → SSH: ssh %s@%s", currentUsername(), tailscaleIP[0])
+	a.output.Section("🚀", "Macaron is running")
+	a.output.Info("SSH  ssh %s@%s", currentUsername(), tailscaleIP[0])
 	for _, service := range active {
-		a.log.info("   -> %s: http://%s:%d", service.Name, tailscaleIP[0], service.Port)
+		a.output.Info("%s  http://%s:%d", service.Name, tailscaleIP[0], service.Port)
 	}
 
 	<-ctx.Done()
@@ -130,8 +128,8 @@ func (a *app) launchService(name, script string, port int) (*managedService, err
 	cmd := scriptCommand(script)
 	cmd.Dir = serviceRoot(script)
 	cmd.Env = append(os.Environ(), "MACARON_AVAILABLE_PORT="+strconv.Itoa(port))
-	stdout := newLineWriter(a.log, name)
-	stderr := newLineWriter(a.log, name)
+	stdout := newLineWriter(a.output, name)
+	stderr := newLineWriter(a.output, name)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
@@ -148,13 +146,15 @@ func (a *app) launchService(name, script string, port int) (*managedService, err
 }
 
 type lineWriter struct {
-	log     *logger
+	output  *terminalOutput
 	name    string
 	mu      sync.Mutex
 	pending bytes.Buffer
 }
 
-func newLineWriter(log *logger, name string) *lineWriter { return &lineWriter{log: log, name: name} }
+func newLineWriter(output *terminalOutput, name string) *lineWriter {
+	return &lineWriter{output: output, name: name}
+}
 func (w *lineWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -166,7 +166,7 @@ func (w *lineWriter) Write(p []byte) (int, error) {
 			w.pending.WriteString(line)
 			break
 		}
-		w.log.script("🪵 (%s) LOG %s", w.name, strings.TrimSuffix(line, "\n"))
+		w.output.Service(w.name, strings.TrimSuffix(line, "\n"))
 	}
 	return n, nil
 }
@@ -177,7 +177,7 @@ func (w *lineWriter) flush() {
 	if w.pending.Len() == 0 {
 		return
 	}
-	w.log.script("🪵 (%s) LOG %s", w.name, w.pending.String())
+	w.output.Service(w.name, w.pending.String())
 	w.pending.Reset()
 }
 
@@ -185,7 +185,7 @@ func (a *app) stopServices(services []*managedService) {
 	if len(services) == 0 {
 		return
 	}
-	a.log.info("🛑 Stopping services...")
+	a.output.Info("Stopping %d services", len(services))
 	for _, service := range services {
 		select {
 		case <-service.done:
@@ -203,7 +203,7 @@ func (a *app) stopServices(services []*managedService) {
 				select {
 				case <-remaining.done:
 				default:
-					a.log.warn("⚠️  Service process %d did not stop gracefully; stopping it", remaining.cmd.Process.Pid)
+					a.output.Warning("%s did not stop gracefully; killing process %d", remaining.Name, remaining.cmd.Process.Pid)
 					_ = remaining.cmd.Process.Kill()
 				}
 			}
@@ -219,10 +219,10 @@ func (a *app) stopServices(services []*managedService) {
 }
 
 func (a *app) cleanupServices() {
-	a.log.info("🧹 Cleaning up services...")
+	a.output.Info("Cleaning up services")
 	dirs, err := serviceDirs(a.services)
 	if err != nil {
-		a.log.error("😵 Failed to list services: %v", err)
+		a.output.Error("Failed to list services: %v", err)
 		return
 	}
 	for _, dir := range dirs {
@@ -232,9 +232,9 @@ func (a *app) cleanupServices() {
 		}
 		name := filepath.Base(dir)
 		if err := a.runCheck(script, name+" · cleanup"); err != nil {
-			a.log.error("😵 Failed to clean up %s", name)
+			a.output.Error("Cleanup failed for %s: %v", name, err)
 		} else {
-			a.log.info("✅ %s cleaned up", name)
+			a.output.Success("Cleaned up %s", name)
 		}
 	}
 }
