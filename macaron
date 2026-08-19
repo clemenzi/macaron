@@ -4,6 +4,7 @@ set -e
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/macaron"
 SERVICES_DIR="$CONFIG_DIR/services"
 DISABLED_SERVICES_DIR="$CONFIG_DIR/services-disabled"
+ACTIVE_SERVICES_FILE="$CONFIG_DIR/active-services.json"
 MAX_OUTPUT_LINES=4
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -24,6 +25,38 @@ log_warn() { log "$@"; }
 log_error() { printf '%s%s%s\n' "$WHITE" "$*" "$RESET" >&2; }
 log_script() { printf '%s%s%s\n' "$DIM_GRAY" "$*" "$RESET"; }
 log_empty_script() { printf '%s%s%s\n' "$DIM_GRAY_ITALIC" "$*" "$RESET"; }
+
+json_escape() {
+  local value=$1
+
+  value=${value//\\/\\\\}
+  value=${value//\"/\\\"}
+  value=${value//$'\n'/\\n}
+  value=${value//$'\r'/\\r}
+  value=${value//$'\t'/\\t}
+  printf '%s' "$value"
+}
+
+write_active_services_file() {
+  local separator=""
+  local index
+  local service_name
+  local temp_file
+
+  mkdir -p "$CONFIG_DIR"
+  temp_file=$(mktemp "$CONFIG_DIR/.active-services.XXXXXX")
+  {
+    printf '[\n'
+    for index in "${!ACTIVE_SERVICE_NAMES[@]}"; do
+      service_name=$(json_escape "${ACTIVE_SERVICE_NAMES[$index]}")
+      printf '%s  {"name":"%s","port":%s}' \
+        "$separator" "$service_name" "${ACTIVE_SERVICE_PORTS[$index]}"
+      separator=$',\n'
+    done
+    printf '\n]\n'
+  } > "$temp_file"
+  mv "$temp_file" "$ACTIVE_SERVICES_FILE"
+}
 
 stream_output() {
   local line
@@ -449,6 +482,8 @@ start() {
   SERVICE_PIDS=()
   SERVICE_NAMES=()
   SERVICE_PORTS=()
+  ACTIVE_SERVICE_NAMES=()
+  ACTIVE_SERVICE_PORTS=()
   SERVICE_LOG_PIDS=()
   SERVICE_LOG_DIR=""
 
@@ -494,6 +529,7 @@ start() {
     if [ -n "$SERVICE_LOG_DIR" ]; then
       rm -rf "$SERVICE_LOG_DIR"
     fi
+    rm -f "$ACTIVE_SERVICES_FILE"
   }
 
   cleanup() {
@@ -597,9 +633,13 @@ start() {
       fi
     else
       log_success "✅ $service_name started"
+      ACTIVE_SERVICE_NAMES[${#ACTIVE_SERVICE_NAMES[@]}]=$service_name
+      ACTIVE_SERVICE_PORTS[${#ACTIVE_SERVICE_PORTS[@]}]=${SERVICE_PORTS[$index]}
       logs="$logs   -> $service_name: http://$tailscale_ip:${SERVICE_PORTS[$index]}\n"
     fi
   done
+
+  write_active_services_file
 
   if [ "$found_services" -eq 0 ]; then
     log_warn "⚠️  No services found in $SERVICES_DIR"

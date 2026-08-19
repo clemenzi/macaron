@@ -48,6 +48,26 @@ name is present in both locations, Macaron refuses to delete either copy.
 check it. Use `enable` to move it back. `list` shows enabled and disabled
 services separately.
 
+## Active services
+
+While Macaron is running, it writes the services that started successfully and
+their assigned ports to:
+
+```text
+~/.config/macaron/active-services.json
+```
+
+For example:
+
+```json
+[
+  {"name":"example-service","port":49001}
+]
+```
+
+The file is replaced atomically after startup and removed when Macaron stops.
+Services that fail during startup are not included.
+
 ## Checking the configuration
 
 ```sh

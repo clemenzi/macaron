@@ -33,7 +33,9 @@ exec ./server --host 0.0.0.0 --port "$MACARON_AVAILABLE_PORT"
 ```
 
 Macaron displays the service URL using the Mac's Tailscale IPv4 address and the
-assigned port.
+assigned port. Once startup completes, successfully started services and their
+ports are also available in `~/.config/macaron/active-services.json`; the file
+is removed when Macaron stops.
 
 ## The `build` script
 
