@@ -1,0 +1,40 @@
+---
+title: Macaron
+description: Turn your Mac into a securely accessible remote workstation.
+template: splash
+hero:
+  tagline: Prepare your Mac for remote access, keep it awake, and run your own services over a private Tailscale network.
+  actions:
+    - text: Get started
+      link: /getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/clemenzi/macaron
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What Macaron does
+
+Macaron turns a macOS machine into a temporary remote workstation. It enables SSH access, prevents sleep, starts Tailscale, and launches the services you configured. When Macaron stops, it shuts those services down and restores the previous system settings.
+
+<CardGrid>
+  <Card title="Start in minutes" icon="rocket">
+    Install one precompiled binary, run `macaron`, and connect using the Tailscale address printed in the terminal.
+  </Card>
+  <Card title="Bring your own services" icon="server">
+    Any application can become a service by adding a small `.macaron` directory with a foreground start script.
+  </Card>
+  <Card title="Private by design" icon="padlock">
+    SSH and service URLs use your private Tailscale network instead of exposing ports to the public internet.
+  </Card>
+</CardGrid>
+
+## Documentation map
+
+- **Getting started** explains installation, startup, remote access, and shutdown.
+- **Services** covers installing and maintaining applications managed by Macaron.
+- **Service development** documents the `.macaron` contract for service authors.
+- **Reference** lists paths, environment variables, commands, and common failures.
