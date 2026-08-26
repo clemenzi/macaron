@@ -1,0 +1,33 @@
+---
+title: Macaron
+description: Trasforma il tuo Mac in una workstation accessibile in modo sicuro da remoto.
+template: splash
+hero:
+  tagline: Prepara il Mac per l'accesso remoto, mantienilo attivo ed esegui i tuoi servizi su una rete Tailscale privata.
+  actions:
+    - text: Inizia
+      link: /it/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: Vedi su GitHub
+      link: https://github.com/clemenzi/macaron
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Cosa fa Macaron
+
+Macaron trasforma un computer macOS in una workstation remota temporanea. Abilita l'accesso SSH, impedisce la sospensione, avvia Tailscale e lancia i servizi configurati. Quando si ferma, arresta i servizi e ripristina le impostazioni di sistema precedenti.
+
+<CardGrid>
+  <Card title="Parti in pochi minuti" icon="rocket">
+    Installa un unico binario precompilato, esegui `macaron` e collegati usando l'indirizzo Tailscale mostrato nel terminale.
+  </Card>
+  <Card title="Usa i tuoi servizi" icon="server">
+    Qualsiasi applicazione può diventare un servizio aggiungendo una piccola directory `.macaron` con uno script di avvio in foreground.
+  </Card>
+  <Card title="Privato per scelta" icon="padlock">
+    SSH e gli URL dei servizi usano la rete Tailscale privata, senza esporre porte su Internet.
+  </Card>
+</CardGrid>
