@@ -76,9 +76,9 @@ macaron self-update           # Update macaron itself
 
 For the complete documentation, see:
 
-- [service management](docs/services.md), for installing and using services;
-- [service development](docs/service-development.md), for creating a service;
-- [advanced commands](docs/commands.md), for all available options.
+- [service management](https://macaron.vcz.me/services/managing/), for installing and using services;
+- [service development](https://macaron.vcz.me/service-development/overview/), for creating a service;
+- [advanced commands](https://macaron.vcz.me/reference/cli/), for all available options.
 
 > [!NOTE]
 > Services run while Macaron is running. Macaron tracks and stops their
