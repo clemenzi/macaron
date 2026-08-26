@@ -1,2 +1,7 @@
 allowBuilds:
   esbuild: false
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@astrojs/cloudflare@14.2.5'
+  - miniflare@5.20260825.0-alpha
+  - wrangler@4.126.0
