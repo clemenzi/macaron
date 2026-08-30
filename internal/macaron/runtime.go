@@ -17,15 +17,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/clemenzi/macaron/internal/macaron/discover"
 	"github.com/clemenzi/macaron/internal/macaron/process"
 	"github.com/clemenzi/macaron/internal/macaron/service"
 	"github.com/clemenzi/macaron/internal/macaron/ui"
 )
 
-type activeService struct {
-	Name string `json:"name"`
-	Port int    `json:"port"`
-}
+const (
+	firstServicePort   = 49001
+	serviceStartupWait = time.Second
+)
+
+type activeService = service.Endpoint
 
 type managedService struct {
 	activeService
@@ -71,60 +74,89 @@ func (a *app) start() error {
 		return errors.New("Tailscale did not return an IPv4 address")
 	}
 
-	dirs, err := service.Dirs(a.services)
+	launched, hasStartScripts, err := a.launchServices()
 	if err != nil {
 		return err
 	}
-	port := 49001
-	found := false
-	for _, dir := range dirs {
-		script := filepath.Join(dir, ".macaron", "start")
-		if !service.RegularFile(script) {
-			continue
-		}
-		found = true
-		for !a.portFree(port) {
-			port++
-		}
-		service, err := a.launchService(filepath.Base(dir), script, port)
-		if err != nil {
-			a.output.Error("Failed to start %s: %v", filepath.Base(dir), err)
-			port++
-			continue
-		}
-		services = append(services, service)
-		port++
-	}
+	services = launched
 
-	time.Sleep(time.Second)
-	active := make([]activeService, 0, len(services))
-	for _, service := range services {
-		select {
-		case <-service.done:
-			if service.waitErr == nil {
-				a.output.Error("%s exited immediately; .macaron/start must stay in the foreground", service.Name)
-			} else {
-				a.output.Error("%s failed during startup: %s", service.Name, exitDescription(service.waitErr))
-			}
-		default:
-			a.output.Success("%s started on port %d", service.Name, service.Port)
-			active = append(active, service.activeService)
-		}
-	}
+	time.Sleep(serviceStartupWait)
+	active := a.runningServices(services)
+
 	if err := a.writeActiveServices(active); err != nil {
 		return err
 	}
-	if !found {
+	if !hasStartScripts {
 		a.output.Warning("No services found in %s", a.services)
 	}
+
+	a.serveDiscovery(ctx, active)
+
 	a.output.Section("🚀", "Macaron is running")
 	a.output.Info("SSH  ssh %s@%s", currentUsername(), tailscaleIP[0])
+	a.output.Info("Discover  http://%s:%d", tailscaleIP[0], discover.Port)
 	for _, service := range active {
 		a.output.Info("%s  http://%s:%d", service.Name, tailscaleIP[0], service.Port)
 	}
 
 	<-ctx.Done()
 	return nil
+}
+
+func (a *app) launchServices() ([]*managedService, bool, error) {
+	dirs, err := service.Dirs(a.services)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var services []*managedService
+	port := firstServicePort
+	hasStartScripts := false
+
+	for _, dir := range dirs {
+		script := filepath.Join(dir, ".macaron", "start")
+		if !service.RegularFile(script) {
+			continue
+		}
+
+		hasStartScripts = true
+		for !a.portFree(port) {
+			port++
+		}
+
+		name := filepath.Base(dir)
+		running, err := a.launchService(name, script, port)
+		if err != nil {
+			a.output.Error("Failed to start %s: %v", name, err)
+			port++
+			continue
+		}
+
+		services = append(services, running)
+		port++
+	}
+
+	return services, hasStartScripts, nil
+}
+
+func (a *app) runningServices(services []*managedService) []activeService {
+	active := make([]activeService, 0, len(services))
+
+	for _, running := range services {
+		select {
+		case <-running.done:
+			if running.waitErr == nil {
+				a.output.Error("%s exited immediately; .macaron/start must stay in the foreground", running.Name)
+			} else {
+				a.output.Error("%s failed during startup: %s", running.Name, exitDescription(running.waitErr))
+			}
+		default:
+			a.output.Success("%s started on port %d", running.Name, running.Port)
+			active = append(active, running.activeService)
+		}
+	}
+
+	return active
 }
 
 func (a *app) launchService(name, script string, port int) (*managedService, error) {
@@ -138,14 +170,19 @@ func (a *app) launchService(name, script string, port int) (*managedService, err
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	service := &managedService{activeService: activeService{Name: name, Port: port}, cmd: cmd, done: make(chan struct{})}
+	running := &managedService{
+		activeService: activeService{Name: name, Port: port},
+		cmd:           cmd,
+		done:          make(chan struct{}),
+	}
 	go func() {
-		service.waitErr = cmd.Wait()
+		running.waitErr = cmd.Wait()
 		stdout.flush()
 		stderr.flush()
-		close(service.done)
+		close(running.done)
 	}()
-	return service, nil
+
+	return running, nil
 }
 
 type lineWriter struct {
@@ -158,6 +195,7 @@ type lineWriter struct {
 func newLineWriter(output *ui.Output, name string) *lineWriter {
 	return &lineWriter{output: output, name: name}
 }
+
 func (w *lineWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -274,6 +312,14 @@ func (a *app) writeActiveServices(services []activeService) error {
 	return nil
 }
 
+func (a *app) serveDiscovery(ctx context.Context, services []activeService) {
+	go func() {
+		if err := discover.Serve(ctx, services); err != nil {
+			a.output.Error("Discovery service failed: %v", err)
+		}
+	}()
+}
+
 func portAvailable(port int) bool {
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
@@ -282,6 +328,7 @@ func portAvailable(port int) bool {
 	listener.Close()
 	return true
 }
+
 func exitDescription(err error) string {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -289,6 +336,7 @@ func exitDescription(err error) string {
 	}
 	return err.Error()
 }
+
 func currentUsername() string {
 	if user := os.Getenv("USER"); user != "" {
 		return user

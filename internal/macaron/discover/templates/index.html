@@ -1,0 +1,37 @@
+{{define "index.html" -}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Macaron · Discover</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Macaron</h1>
+      <p>Services running on this workstation.</p>
+    </header>
+
+    {{if .Services}}
+    <ul>
+      {{range .Services}}
+      <li>
+        <a href="{{.URL}}">
+          <strong>{{.Name}}</strong>
+          <small>{{.URL}}</small>
+        </a>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p>No services are running.</p>
+    {{end}}
+
+    <p><a href="/api/services">JSON API</a></p>
+  </main>
+</body>
+</html>
+{{- end}}

@@ -19,7 +19,7 @@ Macaron first validates your `sudo` credentials, records the current system stat
 2. disables system sleep;
 3. brings Tailscale up;
 4. starts every enabled service that has a `.macaron/start` file;
-5. prints the SSH command and each available service URL.
+5. prints the SSH command, the Discover page, and each available service URL.
 
 Services start alphabetically. Macaron assigns the first free TCP port at or above `49001` to each one.
 
@@ -36,6 +36,10 @@ It also prints an HTTP URL for every service that remains running after its star
 ```text
 dashboard  http://100.x.y.z:49001
 ```
+
+Open `http://100.x.y.z:49000` to use Discover, a responsive page with links to
+all running services. The same list is available as JSON at
+`http://100.x.y.z:49000/api/services`.
 
 The remote device must belong to the same Tailscale network and be allowed by its access-control policy. A service must listen on the assigned port and on an address reachable through Tailscale, such as `0.0.0.0`.
 

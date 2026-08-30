@@ -19,7 +19,7 @@ Macaron convalida prima le credenziali `sudo`, registra lo stato corrente del si
 2. disabilita la sospensione del sistema;
 3. avvia Tailscale;
 4. avvia ogni servizio abilitato che contiene `.macaron/start`;
-5. mostra il comando SSH e l'URL di ogni servizio disponibile.
+5. mostra il comando SSH, la pagina Discover e l'URL di ogni servizio disponibile.
 
 I servizi partono in ordine alfabetico. Macaron assegna a ciascuno la prima porta TCP libera a partire dalla `49001`.
 
@@ -36,6 +36,10 @@ Mostra inoltre un URL HTTP per ogni servizio ancora in esecuzione dopo il contro
 ```text
 dashboard  http://100.x.y.z:49001
 ```
+
+Apri `http://100.x.y.z:49000` per usare Discover, una pagina responsive con i
+collegamenti a tutti i servizi in esecuzione. Lo stesso elenco è disponibile in
+formato JSON su `http://100.x.y.z:49000/api/services`.
 
 Il dispositivo remoto deve appartenere alla stessa rete Tailscale ed essere autorizzato dalle relative regole di accesso. Il servizio deve ascoltare sulla porta assegnata e su un indirizzo raggiungibile tramite Tailscale, come `0.0.0.0`.
 
